@@ -25,10 +25,14 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Initialize Native Android Platform
+      - name: Initialize Android Native Project
         run: |
           cd mobile
-          flutter create --org com.vbox.iot .
+          mkdir -p /tmp/backup_lib
+          cp -r lib /tmp/backup_lib/
+          flutter create --org com.vbox.iot --project-name vbox_iot_mobile .
+          rm -rf lib
+          cp -r /tmp/backup_lib/lib .
           flutter pub get
 
       - name: Build APK Release
