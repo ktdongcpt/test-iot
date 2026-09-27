@@ -65,7 +65,7 @@ class IotProvider extends ChangeNotifier {
     if (['phun_suong_1', 'phun_suong_2', 'phun_suong_3', 'phun_suong_4'].contains(key)) {
       return telemetry.autoHumidityMode;
     }
-    if (key === 'suoi_1') {
+    if (key == 'suoi_1') {
       return telemetry.autoTempMode;
     }
     return false;
