@@ -1,0 +1,1072 @@
+MQTT_limits = 11
+json = require("json")
+local obj
+local err
+local message = ""
+
+-- Cấu hình chu kỳ gửi dữ liệu lên Broker (Gửi mỗi 5 giây)
+local last_send_time = 0
+local send_interval = 5000 -- 5000 ms = 5 giây
+local last_reconnect_time = 0
+local reconnect_interval = 5000 -- 5000 ms = 5 giây thử kết nối lại 1 lần
+
+-- Khai báo Broker
+URL = "tcp://broker.emqx.io:1883"
+CLIENT_ID = "3Fam_iot_2026"
+
+-- Thông số của Broker
+config = {
+    username = "",
+    password = "",
+    keepalive = 100,
+    cleansession = 0
+}
+
+-- Topic nhận dữ liệu từ Broker
+local SUBSCRIBE_TOPICS = "3FAMIOT/HMI_SUB"
+-- Topic gửi dữ liệu đến Broker
+local PUBLISH_TOPIC = "3FAMIOT/HMI_PUB"
+-- Topic gửi thời gian thực đến Broker
+local TIME_TOPIC = "3FAMIOT/TIME"
+-- Topic gửi cảnh báo sự cố đến Broker
+local ALARM_TOPIC = "3FAMIOT/ALARM"
+
+-- Hàm khởi tạo kết nối với MQTT
+function mqtt_init()
+    obj, err = mqtt.create(URL, CLIENT_ID)
+    if obj then
+        obj:on("message", mqtt_msg_callback)
+        message = "Init Success"
+        print(message)
+    else
+        message = "Init Failed: " .. err
+        print(message)
+    end
+end
+
+-- Hàm kiểm tra kết nối
+function mqtt_connect()
+    local stat, err = obj:connect(config)
+    if stat == nil then
+        message = "Connect Failed: " .. err
+        print(message)
+        return
+    else
+        message = "Connected"
+        print(message)
+        obj:subscribe(SUBSCRIBE_TOPICS, 0)
+        -- Gửi ngay gói trạng thái ban đầu khi vừa kết nối Broker thành công
+        send_data()
+        last_send_time = we_bas_gettickcount()
+    end
+end
+
+--------------------------------------------------------------------------------
+-- 1. GIÁM SÁT TRUYỀN THÔNG RS485 VỚI PLC QUA HEARTBEAT (@W_0#HDW13)
+-- PLC đếm liên tục từ 0 đến 60 gửi vào thanh ghi @W_0#HDW13: fb plc to vbox (Heartbeat)
+-- Nếu trong 15 giây giá trị vẫn đứng yên (không thay đổi) -> Báo MẤT KẾT NỐI RS485
+--------------------------------------------------------------------------------
+local PLC_HB_ADDR = "@W_0#HDW13"   -- Thanh ghi phản hồi Heartbeat từ PLC
+local last_plc_hb_val = -1         -- Giá trị heartbeat PLC lần trước
+local last_plc_hb_change_time = 0  -- Mốc thời gian (ms) khi heartbeat PLC thay đổi
+local cur_plc_hb_val = 0           -- Giá trị hiện tại đọc được từ PLC
+local plc_comm_ok = true           -- true: Kết nối tốt, false: Mất kết nối
+local PLC_COMM_TIMEOUT = 15000     -- 15 giây (15000 ms) đứng yên = Mất truyền thông RS485
+
+-- Hàm gán cờ cảnh báo nội bộ LB100
+local function set_internal_alarm_bit(val)
+    if type(sys_set_bit) == "function" then
+        pcall(sys_set_bit, "Local_HMI:LB100", val)
+    end
+    pcall(we_bas_setbit, "@B_0#LB100", val)
+end
+
+-- Hàm gửi cảnh báo truyền thông RS485 lên MQTT Broker ngay lập tức
+function send_plc_comm_alarm(is_ok)
+    if not obj or not obj:isconnected() then return end
+    local cur_h, cur_m, cur_s, cur_d, cur_mon, cur_y = get_current_time()
+    local time_str = string.format("%02d:%02d:%02d %02d/%02d/%04d", cur_h, cur_m, cur_s, cur_d, cur_mon, cur_y)
+
+    local alarm_data = {
+        type = "COMM_ALARM",
+        source = "V-BOX",
+        plc_comm = is_ok and 1 or 0,
+        plc_heartbeat = cur_plc_hb_val,
+        status = is_ok and "CONNECTED" or "DISCONNECTED",
+        message = is_ok and "Đã khôi phục truyền thông RS485 với PLC" or "CẢNH BÁO: MẤT TRUYỀN THÔNG RS485 VỚI PLC (Heartbeat PLC đứng yên > 15s)!",
+        time = time_str
+    }
+    local payload = json.encode(alarm_data)
+    print(">>> [MQTT ALARM RS485] " .. payload)
+
+    -- 1. Gửi lên topic cảnh báo riêng 3FAMIOT/ALARM
+    obj:publish(ALARM_TOPIC, payload, 0, 0)
+
+    -- 2. Đồng thời gửi ngay dữ liệu cập nhật trạng thái lên topic 3FAMIOT/HMI_PUB
+    send_data()
+end
+
+-- Hàm quét liên tục kiểm tra giá trị Heartbeat PLC gửi lên tại @W_0#HDW13
+function process_plc_comm_check()
+    local now = we_bas_gettickcount()
+
+    -- Khởi tạo mốc thời gian lần đầu chạy
+    if last_plc_hb_change_time == 0 then
+        last_plc_hb_change_time = now
+    end
+
+    -- Đọc giá trị Heartbeat do PLC gửi vào @W_0#HDW13
+    local ok, val = pcall(function()
+        return we_bas_getword(PLC_HB_ADDR, 1) or we_bas_getword("@W_HDW13", 1)
+    end)
+
+    if ok and val ~= nil then
+        cur_plc_hb_val = val
+
+        -- Nếu giá trị thay đổi so với lần trước -> PLC đang truyền thông bình thường!
+        if val ~= last_plc_hb_val then
+            last_plc_hb_val = val
+            last_plc_hb_change_time = now -- Reset mốc thời gian tính 15s
+
+            -- Nếu trước đó đang ở trạng thái mất kết nối thì khôi phục lại ngay
+            if not plc_comm_ok then
+                plc_comm_ok = true
+                set_internal_alarm_bit(0) -- Tắt cờ cảnh báo nội bộ LB100
+                print(string.format(">>> [THÔNG BÁO] ĐÃ KHÔI PHỤC TRUYỀN THÔNG RS485 VỚI PLC! (PLC Heartbeat = %d)", val))
+                send_plc_comm_alarm(true)
+            end
+        end
+    end
+
+    -- Kiểm tra nếu trong 15 giây (15000 ms) mà giá trị vẫn đứng yên không thay đổi
+    if (now - last_plc_hb_change_time) >= PLC_COMM_TIMEOUT then
+        if plc_comm_ok then
+            plc_comm_ok = false
+            set_internal_alarm_bit(1) -- Bật cờ cảnh báo nội bộ LB100
+            print(string.format(">>> [CẢNH BÁO NGUY HIỂM] MẤT TRUYỀN THÔNG RS485 VỚI PLC! (Heartbeat @W_0#HDW13 = %d đứng yên quá 15s)", cur_plc_hb_val))
+            send_plc_comm_alarm(false)
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- 2. HÀM HEARTBEAT V-BOX GỬI XUỐNG PLC (@W_0#HDW12: kt ket noi)
+-- V-Box đếm liên tục từ 0 đến 60 và tự động lặp lại mỗi giây
+--------------------------------------------------------------------------------
+local heartbeat_val = 0
+local last_heartbeat_time = 0
+local heartbeat_interval = 1000 -- 1000 ms = 1 giây tăng 1 đơn vị
+
+function process_heartbeat()
+    local now = we_bas_gettickcount()
+    if (now - last_heartbeat_time) >= heartbeat_interval then
+        last_heartbeat_time = now
+        heartbeat_val = heartbeat_val + 1
+        if heartbeat_val > 60 then
+            heartbeat_val = 0
+        end
+        -- Ghi giá trị đếm vào thanh ghi kt ket noi để PLC giám sát V-Box
+        we_bas_setword("@W_0#HDW12", heartbeat_val)
+    end
+end
+
+--------------------------------------------------------------------------------
+-- 3. CẤU HÌNH & QUẢN LÝ 10 THIẾT BỊ THEO MAPPING
+-- Lệnh điều khiển (Control Output):  @B_0#HDX0.0 -> @B_0#HDX0.9
+-- Phản hồi trạng thái (Feedback):   @B_0#HDX1.0 -> @B_0#HDX1.9 (Kiểm tra chính xác)
+-- Hỗ trợ tối đa 24 khung giờ hẹn trong ngày cho 4 thiết bị phun sương và 10 khung giờ cho các thiết bị khác
+--------------------------------------------------------------------------------
+-- Các chế độ hoạt động (mode):
+-- 0 = Tắt thủ công (OFF)
+-- 1 = Bật liên tục (Manual ON)
+-- 2 = Hẹn giờ tắt (Countdown: bật X giây rồi tắt)
+-- 3 = Chu kỳ tuần hoàn (Cycle: Bật X giây / Nghỉ Y giây)
+-- 4 = Chạy theo lịch thời gian thực (Real-time Schedule - 24 khung giờ cho Phun sương, 10 khung giờ cho thiết bị khác)
+
+local devices = {
+    phun_suong_1 = { 
+        cmd_addr = "@B_0#HDX0.0", status_addr = "@B_0#HDX1.0", name = "Phun suong 1", 
+        mode = 4, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, 
+        schedules = {
+            { start_h = 7, start_m = 10, end_h = 7, end_m = 20 },
+            { start_h = 8, start_m = 0,  end_h = 8, end_m = 30 }
+        } 
+    },
+    phun_suong_2 = { cmd_addr = "@B_0#HDX0.1", status_addr = "@B_0#HDX1.1", name = "Phun suong 2", mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    phun_suong_3 = { cmd_addr = "@B_0#HDX0.2", status_addr = "@B_0#HDX1.2", name = "Phun suong 3", mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    phun_suong_4 = { cmd_addr = "@B_0#HDX0.3", status_addr = "@B_0#HDX1.3", name = "Phun suong 4", mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    den_1        = { cmd_addr = "@B_0#HDX0.4", status_addr = "@B_0#HDX1.4", name = "Den 1",        mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    den_2        = { cmd_addr = "@B_0#HDX0.5", status_addr = "@B_0#HDX1.5", name = "Den 2",        mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    suoi_1       = { cmd_addr = "@B_0#HDX0.6", status_addr = "@B_0#HDX1.6", name = "Suoi 1",       mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    loa_1        = { cmd_addr = "@B_0#HDX0.7", status_addr = "@B_0#HDX1.7", name = "Loa 1",        mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    loa_2        = { cmd_addr = "@B_0#HDX0.8", status_addr = "@B_0#HDX1.8", name = "Loa 2",        mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    loa_3        = { cmd_addr = "@B_0#HDX0.9", status_addr = "@B_0#HDX1.9", name = "Loa 3",        mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} }
+}
+
+for _, dev in pairs(devices) do
+    dev.addr = dev.cmd_addr
+end
+
+local dev_keys = {
+    "phun_suong_1", "phun_suong_2", "phun_suong_3", "phun_suong_4",
+    "den_1", "den_2", "suoi_1", "loa_1", "loa_2", "loa_3"
+}
+
+local last_rtc_check = 0    -- Mốc thời gian kiểm tra RTC (ms)
+local rtc_interval = 1000   -- Quét RTC mỗi 1 giây (1000 ms)
+
+--------------------------------------------------------------------------------
+-- CẤU HÌNH NGƯỠNG CẢM BIẾN & CHẾ ĐỘ TỰ ĐỘNG (AUTO SENSOR)
+--------------------------------------------------------------------------------
+local temp_threshold = 25.0    -- Ngưỡng nhiệt độ (°C): Nhiệt độ < temp_threshold => Bật Sưởi 1
+local hum_threshold  = 70.0    -- Ngưỡng độ ẩm (%): Độ ẩm < hum_threshold => Bật 4 Phun sương
+local auto_temp      = false   -- true: Tự động cảm biến nhiệt độ, false: Chạy lịch hẹn RTC
+local auto_humidity  = false   -- true: Tự động cảm biến độ ẩm, false: Chạy lịch hẹn RTC
+
+-- Cấu hình chu kỳ phun sương tự động theo độ ẩm (Tránh úng nước, chờ độ ẩm kịp lan tỏa)
+local ps_auto_on_sec       = 120   -- Thời gian phun mỗi lần (Giây), ví dụ: 120 giây (2 phút)
+local ps_auto_off_sec      = 900   -- Khoảng thời gian nghỉ giữa các lần phun (Giây), ví dụ: 900 giây (15 phút)
+local ps_auto_on_time      = 2.0   -- Tương thích: Thời gian phun (Phút)
+local ps_auto_off_time     = 15.0  -- Tương thích: Thời gian nghỉ (Phút)
+local ps_auto_cycle_state  = 0     -- 0: Chờ/Đủ ẩm (IDLE), 1: Đang phun (SPRAYING), 2: Đang nghỉ lan tỏa (RESTING - Khóa bơm)
+local ps_auto_cycle_start  = 0     -- Mốc thời gian bắt đầu trạng thái hiện tại (ms)
+
+-- Múi giờ đã được cấu hình chuẩn UTC+7 trên PIStudio
+local TIME_OFFSET_HOURS = 0
+
+-- Hàm lấy thời gian thực hiện tại (Giờ, Phút, Giây, Ngày, Tháng, Năm)
+function get_current_time()
+    local hour, min, sec = 0, 0, 0
+    local day, month, year = 0, 0, 0
+
+    -- Cách 1: Thư viện chuẩn os.date của Lua (chạy trên hệ điều hành V-Box Linux)
+    local ok, t = pcall(function() return os.date("*t") end)
+    if ok and type(t) == "table" and t.hour and t.min then
+        hour = t.hour
+        min = t.min
+        sec = t.sec or 0
+        day = t.day or 0
+        month = t.month or 0
+        year = t.year or 0
+    else
+        -- Cách 2: Đọc từ thanh ghi hệ thống HSW của Wecon HMI (HSW2: Giờ, HSW1: Phút, HSW0: Giây)
+        hour = we_bas_getword("@W_0#HSW2", 1) or 0
+        min = we_bas_getword("@W_0#HSW1", 1) or 0
+        sec = we_bas_getword("@W_0#HSW0", 1) or 0
+        day = we_bas_getword("@W_0#HSW3", 1) or 0
+        month = we_bas_getword("@W_0#HSW4", 1) or 0
+        year = we_bas_getword("@W_0#HSW5", 1) or 0
+    end
+
+    if TIME_OFFSET_HOURS ~= 0 then
+        hour = (hour + TIME_OFFSET_HOURS) % 24
+        if hour < 0 then
+            hour = hour + 24
+        end
+    end
+
+    return hour, min, sec, day, month, year
+end
+
+-- Hàm kiểm tra thời gian hiện tại có nằm trong khoảng [start, stop) hay không
+local function is_time_in_range(cur_h, cur_m, s_h, s_m, e_h, e_m)
+    local cur = cur_h * 60 + cur_m
+    local s = s_h * 60 + s_m
+    local e = e_h * 60 + e_m
+    if s <= e then
+        return (cur >= s and cur < e)
+    else
+        -- Trường hợp chạy qua nửa đêm (ví dụ: từ 23h00 đến 01h00 hôm sau)
+        return (cur >= s or cur < e)
+    end
+end
+
+-- Hàm tách chuỗi thời gian "07:10", "7h10", "07H10" thành (giờ, phút)
+local function parse_time_token(val)
+    if type(val) == "string" then
+        local h, m = val:match("(%d+)%s*[:hH]%s*(%d+)")
+        if h and m then
+            return tonumber(h), tonumber(m)
+        end
+    elseif type(val) == "table" then
+        return tonumber(val.h or val.hour), tonumber(val.m or val.min)
+    end
+    return nil, nil
+end
+
+-- Hàm gửi lệnh ra ngõ điều khiển (Ghi vào @B_0#HDX0.0 -> @B_0#HDX0.9)
+local function set_dev_output(dev, val)
+    dev.cmd_state = val
+    we_bas_setbit(dev.cmd_addr, val)
+end
+
+-- Hàm đọc kiểm tra chính xác trạng thái thực tế của thiết bị (Đọc từ @B_0#HDX1.0 -> @B_0#HDX1.9)
+function get_dev_status(dev)
+    if not dev then return 0 end
+    local ok, b = pcall(we_bas_getbit, dev.status_addr)
+    if ok and b ~= nil then
+        return b
+    end
+    -- Fallback nếu hàm đọc lỗi hoặc chưa có phản hồi từ phần cứng
+    return dev.cmd_state or 0
+end
+
+-- 1. Tắt thiết bị
+function dev_stop(key)
+    local dev = devices[key]
+    if not dev then return end
+    dev.mode = 0
+    set_dev_output(dev, 0)
+    print(dev.name .. ": OFF (Lenh: " .. dev.cmd_addr .. " = 0)")
+end
+
+-- 2. Bật thiết bị (duration tính bằng giây; nếu <= 0 thì bật liên tục)
+function dev_start_timer(key, duration_sec)
+    local dev = devices[key]
+    if not dev then return end
+    duration_sec = tonumber(duration_sec) or 0
+    if duration_sec <= 0 then
+        dev.mode = 1
+        set_dev_output(dev, 1)
+        print(dev.name .. ": ON (Lien tuc, Lenh: " .. dev.cmd_addr .. " = 1)")
+    else
+        dev.mode = 2
+        dev.on_time = duration_sec * 1000
+        dev.timer_start = we_bas_gettickcount()
+        set_dev_output(dev, 1)
+        print(dev.name .. ": ON (Hen gio " .. duration_sec .. "s, Lenh: " .. dev.cmd_addr .. " = 1)")
+    end
+end
+
+-- 3. Chạy theo chu kỳ tuần hoàn (on_sec: giây bật, off_sec: giây nghỉ)
+function dev_start_cycle(key, on_sec, off_sec)
+    local dev = devices[key]
+    if not dev then return end
+    dev.mode = 3
+    dev.on_time = (tonumber(on_sec) or 10) * 1000
+    dev.off_time = (tonumber(off_sec) or 60) * 1000
+    dev.timer_start = we_bas_gettickcount()
+    set_dev_output(dev, 1)
+    print(dev.name .. ": Chay chu ky (Bat " .. on_sec .. "s / Nghi " .. off_sec .. "s)")
+end
+
+-- 4. Kích hoạt chế độ lịch hẹn thời gian thực
+function dev_start_schedule(key)
+    local dev = devices[key]
+    if not dev then return end
+    dev.mode = 4
+    last_rtc_check = 0 -- Đặt mốc 0 để quét lại ngay lập tức
+    print(dev.name .. ": Chuyen sang che do Lich thoi gian thuc (Schedule)")
+end
+
+-- Hàm kiểm tra một khung giờ có hiệu lực hay không (kiểm tra cả ngày/tháng nếu được chỉ định)
+local function is_slot_active(cur_h, cur_m, cur_d, cur_mon, slot)
+    if slot.day and slot.month and slot.day > 0 and slot.month > 0 then
+        if cur_d ~= slot.day or cur_mon ~= slot.month then
+            return false
+        end
+    end
+    return is_time_in_range(cur_h, cur_m, slot.start_h, slot.start_m, slot.end_h, slot.end_m)
+end
+
+-- 5. Cập nhật danh sách lịch biểu từ JSON (hỗ trợ mảng tối đa 10 khung giờ)
+function dev_set_schedules(key, schedule_data)
+    local dev = devices[key]
+    if not dev or type(schedule_data) ~= "table" then return end
+    local new_list = {}
+
+    if #schedule_data > 0 then
+        for _, item in ipairs(schedule_data) do
+            local enabled = true
+            if item.enable ~= nil then
+                if item.enable == 0 or item.enable == false or item.enable == "0" then
+                    enabled = false
+                end
+            end
+
+            if enabled then
+                local sh, sm = parse_time_token(item.start or item.on or item.s)
+                local eh, em = parse_time_token(item.stop or item.off or item["end"] or item.e)
+                if sh and sm and eh and em then
+                    table.insert(new_list, {
+                        start_h = sh, start_m = sm, end_h = eh, end_m = em,
+                        day = tonumber(item.day), month = tonumber(item.month), year = tonumber(item.year)
+                    })
+                elseif item.start_h and item.start_m and item.end_h and item.end_m then
+                    table.insert(new_list, {
+                        start_h = tonumber(item.start_h),
+                        start_m = tonumber(item.start_m),
+                        end_h = tonumber(item.end_h),
+                        end_m = tonumber(item.end_m),
+                        day = tonumber(item.day), month = tonumber(item.month), year = tonumber(item.year)
+                    })
+                end
+            end
+        end
+    else
+        local sh, sm = parse_time_token(schedule_data.start or schedule_data.on or schedule_data.s)
+        local eh, em = parse_time_token(schedule_data.stop or schedule_data.off or schedule_data["end"] or schedule_data.e)
+        if sh and sm and eh and em then
+            table.insert(new_list, {
+                start_h = sh, start_m = sm, end_h = eh, end_m = em,
+                day = tonumber(schedule_data.day),
+                month = tonumber(schedule_data.month),
+                year = tonumber(schedule_data.year)
+            })
+        end
+    end
+
+    dev.schedules = new_list
+    print(string.format("%s: Da cap nhat %d khung gio hen.", dev.name, #new_list))
+    for i, s in ipairs(new_list) do
+        print(string.format("  -> Khung [%d]: %02d:%02d -> %02d:%02d", i, s.start_h, s.start_m, s.end_h, s.end_m))
+    end
+    -- Gửi phản hồi danh sách lịch thực tế đã nạp về Web ngay lập tức để xác nhận đã lưu
+    send_device_schedules(key)
+end
+
+-- 5.1. Hàm gửi danh sách các khung giờ thực tế đang nạp trong V-Box lên Broker để Web hiển thị
+function send_device_schedules(target_dev)
+    if not obj or not obj:isconnected() then return end
+
+    if target_dev and target_dev ~= "all" and devices[target_dev] then
+        local dev = devices[target_dev]
+        local out_scheds = {}
+        for _, s in ipairs(dev.schedules) do
+            table.insert(out_scheds, {
+                start = string.format("%02d:%02d", s.start_h or 0, s.start_m or 0),
+                stop = string.format("%02d:%02d", s.end_h or 0, s.end_m or 0),
+                start_h = s.start_h,
+                start_m = s.start_m,
+                end_h = s.end_h,
+                end_m = s.end_m,
+                day = s.day,
+                month = s.month,
+                year = s.year
+            })
+        end
+
+        local resp = {
+            type = "VBOX_SCHEDULES_RESP",
+            device = target_dev,
+            device_name = dev.name,
+            mode = dev.mode,
+            count = #out_scheds,
+            schedules = out_scheds
+        }
+        local payload = json.encode(resp)
+        print(string.format(">>> [MQTT GỬI LỊCH THỰC TẾ V-BOX] %s: %d khung giờ", dev.name, #out_scheds))
+        obj:publish(PUBLISH_TOPIC, payload, 0, 0)
+    else
+        local all_scheds = {}
+        for _, k in ipairs(dev_keys) do
+            local d = devices[k]
+            local out_scheds = {}
+            for _, s in ipairs(d.schedules) do
+                table.insert(out_scheds, {
+                    start = string.format("%02d:%02d", s.start_h or 0, s.start_m or 0),
+                    stop = string.format("%02d:%02d", s.end_h or 0, s.end_m or 0),
+                    start_h = s.start_h,
+                    start_m = s.start_m,
+                    end_h = s.end_h,
+                    end_m = s.end_m,
+                    day = s.day,
+                    month = s.month,
+                    year = s.year
+                })
+            end
+            all_scheds[k] = {
+                name = d.name,
+                mode = d.mode,
+                count = #out_scheds,
+                schedules = out_scheds
+            }
+        end
+        local resp = {
+            type = "VBOX_SCHEDULES_RESP",
+            device = "all",
+            count = #dev_keys,
+            all = all_scheds
+        }
+        local payload = json.encode(resp)
+        print(">>> [MQTT GỬI LỊCH THỰC TẾ TẤT CẢ THIẾT BỊ TỪ V-BOX]")
+        obj:publish(PUBLISH_TOPIC, payload, 0, 0)
+    end
+end
+
+-- 6. Quét định kỳ tất cả 10 thiết bị theo các khung giờ (gọi liên tục trong main)
+function process_all_devices()
+    local now = we_bas_gettickcount()
+    local check_rtc = false
+    local cur_h, cur_m, cur_s, cur_d, cur_mon, cur_y = 0, 0, 0, 0, 0, 0
+
+    if (now - last_rtc_check) >= rtc_interval then
+        last_rtc_check = now
+        check_rtc = true
+        cur_h, cur_m, cur_s, cur_d, cur_mon, cur_y = get_current_time()
+    end
+
+    for _, key in ipairs(dev_keys) do
+        local dev = devices[key]
+
+        -- Kiểm tra nếu thiết bị đang được điều khiển tự động theo cảm biến thì tạm bỏ qua quét lịch hẹn RTC
+        local controlled_by_sensor = false
+        if (key == "phun_suong_1" or key == "phun_suong_2" or key == "phun_suong_3" or key == "phun_suong_4") and auto_humidity then
+            controlled_by_sensor = true
+        elseif key == "suoi_1" and auto_temp then
+            controlled_by_sensor = true
+        end
+
+        -- Nếu không bị cảm biến khống chế thì chạy theo timer, chu kỳ hoặc lịch hẹn RTC
+        if not controlled_by_sensor then
+            -- Chế độ 2: Hẹn giờ tắt (đếm ngược)
+            if dev.mode == 2 then
+                if (now - dev.timer_start) >= dev.on_time then
+                    dev_stop(key)
+                    print(dev.name .. ": Het thoi gian hen gio -> Tu dong TAT")
+                end
+
+            -- Chế độ 3: Chạy chu kỳ tuần hoàn (Bật / Nghỉ)
+            elseif dev.mode == 3 then
+                if dev.cmd_state == 1 then
+                    if (now - dev.timer_start) >= dev.on_time then
+                        set_dev_output(dev, 0)
+                        dev.timer_start = now
+                        print(dev.name .. ": Chu ky -> Chuyen sang NGHI")
+                    end
+                else
+                    if (now - dev.timer_start) >= dev.off_time then
+                        set_dev_output(dev, 1)
+                        dev.timer_start = now
+                        print(dev.name .. ": Chu ky -> Chuyen sang BAT")
+                    end
+                end
+
+            -- Chế độ 4: Chạy theo lịch thời gian thực (RTC Schedule - kiểm tra tất cả các khung giờ đã cài)
+            elseif dev.mode == 4 and check_rtc then
+                local in_schedule = false
+                for _, slot in ipairs(dev.schedules) do
+                    if is_slot_active(cur_h, cur_m, cur_d, cur_mon, slot) then
+                        in_schedule = true
+                        break
+                    end
+                end
+
+                if in_schedule then
+                    if dev.cmd_state == 0 then
+                        set_dev_output(dev, 1)
+                        print(string.format("%s: Trong khung gio hen (%02d:%02d) -> Lenh BAT (HDX0.x = 1)", dev.name, cur_h, cur_m))
+                    end
+                else
+                    if dev.cmd_state == 1 then
+                        set_dev_output(dev, 0)
+                        print(string.format("%s: Ngoai tat ca cac khung gio hen (%02d:%02d) -> Lenh TAT (HDX0.x = 0)", dev.name, cur_h, cur_m))
+                    end
+                end
+            end
+        end
+    end
+end
+
+--------------------------------------------------------------------------------
+-- 6.1. HÀM TỰ ĐỘNG ĐIỀU KHIỂN THEO CẢM BIẾN (AUTO SENSOR)
+-- - Phun sương (1..4): Khi auto_humidity = true:
+--     + Nếu Độ ẩm < hum_threshold => Bật cả 4 bơm phun sương
+--     + Nếu Độ ẩm >= hum_threshold => Tắt cả 4 bơm phun sương
+-- - Sưởi 1: Khi auto_temp = true:
+--     + Nếu Nhiệt độ < temp_threshold => Bật Sưởi 1
+--     + Nếu Nhiệt độ >= temp_threshold => Tắt Sưởi 1
+--------------------------------------------------------------------------------
+local last_sensor_auto_check = 0
+local sensor_auto_interval = 1000 -- Quét kiểm tra cảm biến mỗi 1 giây (1000 ms)
+
+function process_sensor_auto_control()
+    local now = we_bas_gettickcount()
+    if (now - last_sensor_auto_check) < sensor_auto_interval then
+        return
+    end
+    last_sensor_auto_check = now
+
+    local t_val = we_bas_getword("@W_0#HDW10", 1) or we_bas_getword("@W_HDW10", 1) or 0
+    local h_val = we_bas_getword("@W_0#HDW11", 1) or we_bas_getword("@W_HDW11", 1) or 0
+
+    -- 1. Điều khiển tự động Phun sương 1..4 theo cảm biến độ ẩm & chu kỳ 3 trạng thái
+    if auto_humidity then
+        local target_ps_state = 0
+        local on_ms = (ps_auto_on_sec or 120) * 1000
+        local off_ms = (ps_auto_off_sec or 900) * 1000
+
+        -- State machine 3 trạng thái:
+        -- 0: IDLE (Chờ kích hoạt / Đã đủ ẩm)
+        -- 1: SPRAYING (Đang phun trong on_ms)
+        -- 2: RESTING (Đang nghỉ lan tỏa ẩm trong off_ms - KHÓA BƠM TUYỆT ĐỐI)
+
+        if ps_auto_cycle_state == 1 then
+            -- [TRẠNG THÁI 1: ĐANG PHUN]
+            if (now - ps_auto_cycle_start) >= on_ms then
+                -- Hết thời gian phun cho phép
+                if off_ms > 0 then
+                    ps_auto_cycle_state = 2
+                    ps_auto_cycle_start = now
+                    target_ps_state = 0
+                    print(string.format(">>> [AUTO ĐỘ ẨM] Đã phun đủ %d giây -> BẮT ĐẦU NGHỈ KHÓA BƠM %d giây để lan tỏa ẩm", 
+                        ps_auto_on_sec, ps_auto_off_sec))
+                else
+                    if h_val >= hum_threshold then
+                        ps_auto_cycle_state = 0
+                        ps_auto_cycle_start = 0
+                        target_ps_state = 0
+                    else
+                        target_ps_state = 1
+                    end
+                end
+            elseif h_val >= hum_threshold then
+                -- Đang phun mà độ ẩm đã đạt hoặc vượt ngưỡng -> Dừng phun ngay và vào thời gian nghỉ lan tỏa
+                if off_ms > 0 then
+                    ps_auto_cycle_state = 2
+                    ps_auto_cycle_start = now
+                    target_ps_state = 0
+                    print(string.format(">>> [AUTO ĐỘ ẨM] Đang phun thì độ ẩm đã đạt (%s%% >= %s%%) -> Dừng phun & NGHỈ %d giây", 
+                        tostring(h_val), tostring(hum_threshold), ps_auto_off_sec))
+                else
+                    ps_auto_cycle_state = 0
+                    ps_auto_cycle_start = 0
+                    target_ps_state = 0
+                end
+            else
+                -- Tiếp tục phun
+                target_ps_state = 1
+            end
+
+        elseif ps_auto_cycle_state == 2 then
+            -- [TRẠNG THÁI 2: ĐANG NGHỈ LAN TỎA]
+            -- KHÓA CHẶT BƠM TẮT: Cho dù độ ẩm có tụt hay dao động thì bơm vẫn bắt buộc phải nghỉ đủ off_ms!
+            target_ps_state = 0
+
+            if (now - ps_auto_cycle_start) >= off_ms then
+                -- Đã nghỉ đủ thời gian
+                if h_val < hum_threshold then
+                    -- Sau khi nghỉ lan tỏa mà độ ẩm vẫn chưa đạt -> Tiếp tục chu kỳ phun mới
+                    ps_auto_cycle_state = 1
+                    ps_auto_cycle_start = now
+                    target_ps_state = 1
+                    print(string.format(">>> [AUTO ĐỘ ẨM] Hết %d giây nghỉ (ẩm: %s%% < %s%%) -> Bật chu kỳ PHUN tiếp theo (%d giây)", 
+                        ps_auto_off_sec, tostring(h_val), tostring(hum_threshold), ps_auto_on_sec))
+                else
+                    -- Độ ẩm đã đạt ổn định -> Về trạng thái CHỜ (IDLE)
+                    ps_auto_cycle_state = 0
+                    ps_auto_cycle_start = 0
+                    target_ps_state = 0
+                    print(string.format(">>> [AUTO ĐỘ ẨM] Hết thời gian nghỉ, độ ẩm đã đạt chuẩn (%s%% >= %s%%) -> Về trạng thái CHỜ", 
+                        tostring(h_val), tostring(hum_threshold)))
+                end
+            end
+
+        else
+            -- [TRẠNG THÁI 0: CHỜ (IDLE)]
+            if h_val < hum_threshold then
+                -- Phát hiện độ ẩm tụt dưới ngưỡng -> Bắt đầu phun
+                ps_auto_cycle_state = 1
+                ps_auto_cycle_start = now
+                target_ps_state = 1
+                print(string.format(">>> [AUTO ĐỘ ẨM] Độ ẩm tụt dưới ngưỡng (%s%% < %s%%) -> Bắt đầu PHUN (%d giây)", 
+                    tostring(h_val), tostring(hum_threshold), ps_auto_on_sec))
+            else
+                target_ps_state = 0
+            end
+        end
+
+        local ps_keys = { "phun_suong_1", "phun_suong_2", "phun_suong_3", "phun_suong_4" }
+        for _, ps_k in ipairs(ps_keys) do
+            local dev = devices[ps_k]
+            if dev and dev.cmd_state ~= target_ps_state then
+                set_dev_output(dev, target_ps_state)
+                local state_desc = "CHỜ"
+                if ps_auto_cycle_state == 1 then state_desc = "ĐANG PHUN"
+                elseif ps_auto_cycle_state == 2 then state_desc = "ĐANG NGHỈ LAN TỎA" end
+                print(string.format(">>> [AUTO ĐỘ ẨM] %s -> %s (Độ ẩm: %s%%, Ngưỡng: %s%%, Chu kỳ: %s)", 
+                    dev.name, target_ps_state == 1 and "BẬT" or "TẮT", tostring(h_val), tostring(hum_threshold), state_desc))
+            end
+        end
+    else
+        ps_auto_cycle_start = 0
+        ps_auto_cycle_state = 0
+    end
+
+    -- 2. Điều khiển tự động Sưởi 1 theo cảm biến nhiệt độ
+    if auto_temp then
+        local dev_suoi = devices.suoi_1
+        if dev_suoi then
+            local target_suoi_state = 0
+            if t_val < temp_threshold then
+                target_suoi_state = 1
+            else
+                target_suoi_state = 0
+            end
+
+            if dev_suoi.cmd_state ~= target_suoi_state then
+                set_dev_output(dev_suoi, target_suoi_state)
+                print(string.format(">>> [AUTO NHIỆT ĐỘ] Suoi 1 -> %s (Nhiệt độ: %s°C, Ngưỡng cài: %s°C)", 
+                    target_suoi_state == 1 and "BẬT" or "TẮT", tostring(t_val), tostring(temp_threshold)))
+            end
+        end
+    end
+end
+
+-- Tương thích ngược với các tên hàm cũ cho phun sương 1
+function ps1_stop() dev_stop("phun_suong_1") end
+function ps1_start_timer(d) dev_start_timer("phun_suong_1", d) end
+function ps1_start_cycle(on, off) dev_start_cycle("phun_suong_1", on, off) end
+function ps1_start_schedule() dev_start_schedule("phun_suong_1") end
+function ps1_set_schedules(s) dev_set_schedules("phun_suong_1", s) end
+function process_phun_suong_1() process_all_devices() end
+
+--------------------------------------------------------------------------------
+-- 7. GIÁM SÁT THAY ĐỔI TRẠNG THÁI THIẾT BỊ VÀ GỬI NGAY LẬP TỨC LÊN BROKER
+-- Khi có bất kỳ thiết bị nào thay đổi trạng thái (Bật -> Tắt hoặc Tắt -> Bật):
+-- Gửi ngay lập tức lên Broker (Topic: 3FAMIOT/HMI_PUB) không cần chờ chu kỳ 5 giây.
+-- Khi trạng thái không đổi: gửi định kỳ theo send_interval (5 giây) cùng cảm biến & heartbeat.
+--------------------------------------------------------------------------------
+function process_device_state_changes()
+    local any_changed = false
+    local changes_desc = {}
+
+    for _, key in ipairs(dev_keys) do
+        local dev = devices[key]
+        if dev then
+            local cur_status = get_dev_status(dev)
+
+            -- Khởi tạo mốc trạng thái ban đầu ở vòng quét đầu tiên
+            if dev.last_status == nil then
+                dev.last_status = cur_status
+            elseif cur_status ~= dev.last_status then
+                table.insert(changes_desc, string.format("%s: %s -> %s", dev.name, tostring(dev.last_status), tostring(cur_status)))
+                dev.last_status = cur_status
+                any_changed = true
+            end
+        end
+    end
+
+    -- Nếu phát hiện bất kỳ thiết bị nào thay đổi trạng thái -> Bắn dữ liệu lên MQTT ngay lập tức!
+    if any_changed then
+        print(">>> [PHÁT HIỆN ĐỔI TRẠNG THÁI] " .. table.concat(changes_desc, ", "))
+        print(">>> GỬI DỮ LIỆU LÊN BROKER NGAY LẬP TỨC!")
+        send_data()
+        last_send_time = we_bas_gettickcount() -- Đặt lại mốc thời gian gửi định kỳ 5s
+    end
+end
+
+-- Hàm gửi thời gian thực lên Broker (Topic: 3FAMIOT/TIME)
+function send_time()
+    if not obj or not obj:isconnected() then return end
+    local cur_h, cur_m, cur_s, cur_d, cur_mon, cur_y = get_current_time()
+    local time_str = string.format("%02d:%02d:%02d", cur_h, cur_m, cur_s)
+    local date_str = string.format("%02d/%02d/%04d", cur_d, cur_mon, cur_y)
+    local time_data = {
+        time = time_str,
+        date = date_str,
+        hour = cur_h,
+        minute = cur_m,
+        second = cur_s,
+        day = cur_d,
+        month = cur_mon,
+        year = cur_y
+    }
+    print("Publishing time to Broker (" .. TIME_TOPIC .. "): " .. time_str .. " " .. date_str)
+    return obj:publish(TIME_TOPIC, json.encode(time_data), 0, 0)
+end
+
+-- Hàm gửi dữ liệu cảm biến, 2 heartbeat, cảnh báo và trạng thái 10 thiết bị lên Broker (Topic: 3FAMIOT/HMI_PUB)
+function send_data()
+    if not obj or not obj:isconnected() then return end
+
+    local t_val = we_bas_getword("@W_0#HDW10", 1) or we_bas_getword("@W_HDW10", 1) or 0
+    local h_val = we_bas_getword("@W_0#HDW11", 1) or we_bas_getword("@W_HDW11", 1) or 0
+    
+    -- Đồng bộ lại last_status cho 10 thiết bị
+    for _, key in ipairs(dev_keys) do
+        local dev = devices[key]
+        if dev then
+            dev.last_status = get_dev_status(dev)
+        end
+    end
+
+    -- Trạng thái thiết bị được đọc chính xác từ các bit phản hồi HDX1.0 -> HDX1.9
+    local pub_data = {
+        Tempeturate = t_val,
+        Temperature = t_val,
+        Humidity = h_val,
+        heartbeat = heartbeat_val,              -- Heartbeat V-Box gửi xuống PLC (@W_0#HDW12: 0..60)
+        kt_ket_noi = heartbeat_val,
+        plc_heartbeat = cur_plc_hb_val,         -- Heartbeat PLC gửi lên V-Box (@W_0#HDW13: 0..60)
+        plc_comm = plc_comm_ok and 1 or 0,      -- 1: Kết nối tốt, 0: Mất kết nối
+        plc_status = plc_comm_ok and "OK" or "DISCONNECTED",
+        alarm = plc_comm_ok and "" or "CẢNH BÁO: MẤT TRUYỀN THÔNG RS485 VỚI PLC (Heartbeat PLC đứng yên > 15s)!",
+        temp_threshold = temp_threshold,
+        hum_threshold = hum_threshold,
+        ps_on_time = ps_auto_on_time,
+        ps_off_time = ps_auto_off_time,
+        ps_on_sec = ps_auto_on_sec,
+        ps_off_sec = ps_auto_off_sec,
+        ps_cycle_state = ps_auto_cycle_state,
+        auto_temp = auto_temp and 1 or 0,
+        auto_humidity = auto_humidity and 1 or 0,
+        phun_suong_1 = get_dev_status(devices.phun_suong_1),
+        phun_suong_2 = get_dev_status(devices.phun_suong_2),
+        phun_suong_3 = get_dev_status(devices.phun_suong_3),
+        phun_suong_4 = get_dev_status(devices.phun_suong_4),
+        den_1        = get_dev_status(devices.den_1),
+        den_2        = get_dev_status(devices.den_2),
+        suoi_1       = get_dev_status(devices.suoi_1),
+        loa_1        = get_dev_status(devices.loa_1),
+        loa_2        = get_dev_status(devices.loa_2),
+        loa_3        = get_dev_status(devices.loa_3)
+    }
+    print(string.format("Publishing data to Broker (%s): Temp=%s, Hum=%s, HB_VBox=%d, HB_PLC=%d, RS485=%s, AutoT=%s, AutoH=%s", 
+        PUBLISH_TOPIC, tostring(t_val), tostring(h_val), heartbeat_val, cur_plc_hb_val, plc_comm_ok and "OK" or "LOST", 
+        auto_temp and "ON" or "OFF", auto_humidity and "ON" or "OFF"))
+    obj:publish(PUBLISH_TOPIC, json.encode(pub_data), 0, 0)
+
+    -- Đồng thời gửi thời gian thực lên topic 3FAMIOT/TIME
+    send_time()
+end
+
+-- Hàm hỗ trợ xử lý lệnh điều khiển cho từng thiết bị
+local function handle_device_command(k, val, receive)
+    local dev = devices[k]
+    if not dev then return end
+
+    if val == 0 or val == false or val == "off" then
+        dev_stop(k)
+    elseif val == "schedule" or receive.mode == "schedule" then
+        if receive.schedules or receive.schedule then
+            dev_set_schedules(k, receive.schedules or receive.schedule)
+        elseif receive.start and (receive.stop or receive.off or receive["end"]) then
+            dev_set_schedules(k, {
+                start = receive.start,
+                stop = receive.stop or receive.off or receive["end"],
+                day = receive.day,
+                month = receive.month,
+                year = receive.year
+            })
+        end
+        dev_start_schedule(k)
+    elseif receive.mode == "cycle" or val == "cycle" then
+        local t_on = receive.on_time or 10
+        local t_off = receive.off_time or 60
+        dev_start_cycle(k, t_on, t_off)
+    else
+        local duration = receive.duration or 0
+        dev_start_timer(k, duration)
+    end
+end
+
+-- Hàm xử lý tin nhắn nhận được từ Broker (Topic: 3FAMIOT/HMI_SUB)
+function mqtt_msg_callback(topic, msg)
+    local topic_receive = "Topic: " .. topic
+    local msg_receive = msg
+    print(topic_receive)
+    print(msg_receive)
+    we_bas_setstring("@W_HDW1100", topic_receive)
+    we_bas_setstring("@W_HDW1200", msg_receive)
+    
+    local status, receive = pcall(json.decode, msg)
+    if status and receive then
+        local handled = false
+
+        -- 0. Nhận cài đặt ngưỡng cảm biến & chế độ tự động
+        if receive.temp_threshold ~= nil then
+            temp_threshold = tonumber(receive.temp_threshold) or temp_threshold
+            print(">>> [MQTT CÀI ĐẶT] temp_threshold = " .. temp_threshold)
+            handled = true
+        end
+
+        if receive.hum_threshold ~= nil then
+            hum_threshold = tonumber(receive.hum_threshold) or hum_threshold
+            print(">>> [MQTT CÀI ĐẶT] hum_threshold = " .. hum_threshold)
+            handled = true
+        end
+
+        if receive.auto_temp ~= nil then
+            local new_val = (receive.auto_temp == 1 or receive.auto_temp == true or receive.auto_temp == "1")
+            auto_temp = new_val
+            print(">>> [MQTT CHẾ ĐỘ] Suoi 1: " .. (auto_temp and "TỰ ĐỘNG CẢM BIẾN NHIỆT ĐỘ" or "TỰ CÀI LỊCH RTC"))
+            if not auto_temp then
+                devices.suoi_1.mode = 4
+                set_dev_output(devices.suoi_1, 0)
+                last_rtc_check = 0
+                process_all_devices()
+            else
+                last_sensor_auto_check = 0
+                process_sensor_auto_control()
+            end
+            handled = true
+        end
+
+        if receive.auto_humidity ~= nil then
+            local new_val = (receive.auto_humidity == 1 or receive.auto_humidity == true or receive.auto_humidity == "1")
+            auto_humidity = new_val
+            print(">>> [MQTT CHẾ ĐỘ] Phun suong: " .. (auto_humidity and "TỰ ĐỘNG CẢM BIẾN ĐỘ ẨM" or "TỰ CÀI LỊCH RTC"))
+            if not auto_humidity then
+                devices.phun_suong_1.mode = 4
+                devices.phun_suong_2.mode = 4
+                devices.phun_suong_3.mode = 4
+                devices.phun_suong_4.mode = 4
+                ps_auto_cycle_start = 0
+                ps_auto_cycle_state = 0
+
+                -- Tắt dứt điểm ngõ ra cả 4 bơm để không lưu giữ trạng thái đang phun của Auto
+                local ps_keys = { "phun_suong_1", "phun_suong_2", "phun_suong_3", "phun_suong_4" }
+                for _, ps_k in ipairs(ps_keys) do
+                    local dev = devices[ps_k]
+                    if dev then
+                        set_dev_output(dev, 0)
+                    end
+                end
+
+                -- Quét kiểm tra lịch RTC ngay lập tức: nếu có khung giờ đang hẹn thì bật lại, không thì giữ tắt
+                last_rtc_check = 0
+                process_all_devices()
+            else
+                ps_auto_cycle_start = 0
+                ps_auto_cycle_state = 0
+                last_sensor_auto_check = 0
+                process_sensor_auto_control()
+            end
+            handled = true
+        end
+
+        -- Cài đặt chu kỳ phun & nghỉ (Hỗ trợ cả giây và phút)
+        if receive.ps_on_sec ~= nil then
+            ps_auto_on_sec = tonumber(receive.ps_on_sec) or ps_auto_on_sec
+            ps_auto_on_time = ps_auto_on_sec / 60.0
+            print(string.format(">>> [MQTT CÀI ĐẶT] ps_auto_on_sec = %d giay (%.2f phut)", ps_auto_on_sec, ps_auto_on_time))
+            handled = true
+        elseif receive.ps_on_time or receive.ps_auto_on_time or receive.psOnTime then
+            local val = tonumber(receive.ps_on_time or receive.ps_auto_on_time or receive.psOnTime)
+            if val then
+                ps_auto_on_time = val
+                ps_auto_on_sec = math.floor(val * 60)
+                print(string.format(">>> [MQTT CÀI ĐẶT] ps_auto_on_time = %.2f phut (%d giay)", ps_auto_on_time, ps_auto_on_sec))
+                handled = true
+            end
+        end
+
+        if receive.ps_off_sec ~= nil then
+            ps_auto_off_sec = tonumber(receive.ps_off_sec) or ps_auto_off_sec
+            ps_auto_off_time = ps_auto_off_sec / 60.0
+            print(string.format(">>> [MQTT CÀI ĐẶT] ps_auto_off_sec = %d giay (%.2f phut)", ps_auto_off_sec, ps_auto_off_time))
+            handled = true
+        elseif receive.ps_off_time or receive.ps_auto_off_time or receive.psOffTime then
+            local val = tonumber(receive.ps_off_time or receive.ps_auto_off_time or receive.psOffTime)
+            if val then
+                ps_auto_off_time = val
+                ps_auto_off_sec = math.floor(val * 60)
+                print(string.format(">>> [MQTT CÀI ĐẶT] ps_auto_off_time = %.2f phut (%d giay)", ps_auto_off_time, ps_auto_off_sec))
+                handled = true
+            end
+        end
+
+        -- 0.1 Lệnh yêu cầu gửi danh sách lịch hẹn thực tế đã nạp trong V-Box (CHỈ ĐỌC, KHÔNG ĐIỀU KHIỂN)
+        if receive.cmd == "get_schedules" or receive.get_schedules ~= nil or receive.read_schedules ~= nil then
+            local req_dev = receive.device or receive.target_device or receive.target or "all"
+            print(">>> [MQTT YÊU CẦU ĐỌC LỊCH] Thiết bị: " .. tostring(req_dev))
+            send_device_schedules(req_dev)
+            return -- DỪNG NGAY: Tuyệt đối không chạy xuống phần điều khiển thiết bị!
+        end
+
+        -- 1. Bù trừ múi giờ nếu có gửi lệnh bù
+        if receive.time_offset ~= nil then
+            TIME_OFFSET_HOURS = tonumber(receive.time_offset) or 0
+            print("Cap nhat TIME_OFFSET_HOURS = " .. TIME_OFFSET_HOURS)
+        end
+
+        local target = receive.device or receive.target
+        if not handled and target and devices[target] then
+            local val = receive[target] or receive.val or receive.state
+            if val ~= nil or receive.mode ~= nil or receive.schedules ~= nil or receive.schedule ~= nil then
+                handle_device_command(target, val or "schedule", receive)
+                handled = true
+            end
+        end
+
+        -- 3. Quét tất cả 10 thiết bị xem có key tương ứng trong JSON không
+        for _, k in ipairs(dev_keys) do
+            if receive[k] ~= nil and (not target or target ~= k) then
+                handle_device_command(k, receive[k], receive)
+                handled = true
+            end
+        end
+
+        -- 4. Hỗ trợ bí danh cũ (fan -> phun_suong_2, pump -> phun_suong_3, light -> den_1)
+        if not handled then
+            if receive.fan ~= nil then
+                handle_device_command("phun_suong_2", receive.fan, receive)
+                handled = true
+            end
+            if receive.pump ~= nil then
+                handle_device_command("phun_suong_3", receive.pump, receive)
+                handled = true
+            end
+            if receive.light ~= nil then
+                handle_device_command("den_1", receive.light, receive)
+                handled = true
+            end
+        end
+
+        -- 5. Nếu gửi lệnh schedule chung không chỉ định thiết bị thì mặc định cho phun_suong_1
+        if not handled and (receive.mode == "schedule" or receive.schedules ~= nil or receive.schedule ~= nil) then
+            handle_device_command("phun_suong_1", "schedule", receive)
+            handled = true
+        end
+
+        -- Kiểm tra tự động và gửi phản hồi lên Broker ngay lập tức
+        if handled then
+            process_sensor_auto_control()
+            process_device_state_changes()
+            send_data()
+            last_send_time = we_bas_gettickcount()
+        end
+    else
+        print("Lỗi: Chuỗi JSON nhận được sai định dạng!")
+    end
+end
+
+-- Chương trình chính quản lý giám sát Heartbeat PLC (@W_0#HDW13), Heartbeat V-Box (@W_0#HDW12), thiết bị và MQTT
+function main()
+    -- 1. Giám sát Heartbeat từ PLC tại @W_0#HDW13 (nếu đứng yên > 15s => cảnh báo mất kết nối RS485)
+    process_plc_comm_check()
+
+    -- 2. Xử lý heartbeat V-Box đếm 0 -> 60 ghi vào thanh ghi @W_0#HDW12 để PLC giám sát V-Box
+    process_heartbeat()
+
+    -- 3. Xử lý tự động theo cảm biến Nhiệt độ / Độ ẩm (nếu bật chế độ Auto Sensor)
+    process_sensor_auto_control()
+
+    -- 4. Quét kiểm tra trạng thái và tất cả khung giờ của cả 10 thiết bị liên tục
+    process_all_devices()
+
+    -- 5. Giám sát thay đổi trạng thái thiết bị -> Nếu có thay đổi thì gửi lên Broker NGAY LẬP TỨC
+    process_device_state_changes()
+
+    -- 6. Quản lý gửi nhận dữ liệu MQTT định kỳ (5 giây khi không có thay đổi)
+    if obj then
+        if obj:isconnected() then
+            -- Gửi dữ liệu định kỳ mỗi send_interval (5 giây) cùng cảm biến & heartbeat
+            local current_time = we_bas_gettickcount()
+            if (current_time - last_send_time) >= send_interval then
+                send_data()
+                last_send_time = current_time
+            end
+        else
+            -- Cooldown thử kết nối lại sau mỗi 5 giây, tránh spam kết nối liên tục
+            local current_time = we_bas_gettickcount()
+            if (current_time - last_reconnect_time) >= reconnect_interval then
+                last_reconnect_time = current_time
+                mqtt_connect()
+            end
+        end
+    else
+        mqtt_init()
+    end
+end

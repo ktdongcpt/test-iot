@@ -1,0 +1,39 @@
+================================================================================
+BẢNG MAPPING ĐỊA CHỈ TRUYỀN THÔNG V-BOX <-> PLC & MQTT
+================================================================================
+
+1. BẢNG ĐIỀU KHIỂN & PHẢN HỒI 10 THIẾT BỊ:
+--------------------------------------------------------------------------------
+Thiết bị          Lệnh điều khiển (V-Box ghi)    Phản hồi trạng thái (PLC/Thiết bị trả về)
+--------------------------------------------------------------------------------
+phun suong 1      @B_0#HDX0.0                    @B_0#HDX1.0
+phun suong 2      @B_0#HDX0.1                    @B_0#HDX1.1
+phun suong 3      @B_0#HDX0.2                    @B_0#HDX1.2
+phun suong 4      @B_0#HDX0.3                    @B_0#HDX1.3
+den 1             @B_0#HDX0.4                    @B_0#HDX1.4
+den 2             @B_0#HDX0.5                    @B_0#HDX1.5
+suoi 1            @B_0#HDX0.6                    @B_0#HDX1.6
+loa 1             @B_0#HDX0.7                    @B_0#HDX1.7
+loa 2             @B_0#HDX0.8                    @B_0#HDX1.8
+loa 3             @B_0#HDX0.9                    @B_0#HDX1.9
+
+2. THANH GHI GIÁM SÁT TRUYỀN THÔNG & CẢM BIẾN:
+--------------------------------------------------------------------------------
+Thanh ghi         Chức năng                      Mô tả chi tiết
+--------------------------------------------------------------------------------
+@W_0#HDW12        Heartbeat V-Box -> PLC         V-Box đếm liên tục 0 -> 60 và lặp lại
+@W_0#HDW13        fb plc to vbox (Heartbeat)     PLC đếm liên tục 0 -> 60 gửi lên V-Box (nếu đứng yên > 15s => Báo mất RS485)
+Local_HMI:LB100   Cờ cảnh báo mất RS485          1: Mất kết nối PLC, 0: Bình thường
+@W_0#HDW10        Nhiệt độ (Temperature)         Dữ liệu cảm biến nhiệt độ gửi lên MQTT
+@W_0#HDW11        Độ ẩm (Humidity)               Dữ liệu cảm biến độ ẩm gửi lên MQTT
+
+3. CÁC TOPIC MQTT ĐỒNG BỘ GIỮA V-BOX VÀ ESP32:
+--------------------------------------------------------------------------------
+Topic             Hướng truyền                   Chức năng
+--------------------------------------------------------------------------------
+3FAMIOT/HMI_PUB   V-Box -> ESP32 Web             Dữ liệu nhiệt độ, độ ẩm, 2 heartbeat, 
+                                                 trạng thái RS485 & 10 thiết bị
+3FAMIOT/TIME      V-Box -> ESP32 Web             Đồng hồ thời gian thực RTC (giờ:phút:giây)
+3FAMIOT/ALARM     V-Box -> ESP32 Web             Cảnh báo tức thời khi mất truyền thông RS485
+3FAMIOT/HMI_SUB   ESP32 Web -> V-Box             Lệnh điều khiển bật/tắt & 10 khung giờ hẹn
+================================================================================
