@@ -21,6 +21,8 @@ class MqttService {
   private scheduleCallbacks: ((device: string, schedules: ScheduleSlot[]) => void)[] = [];
   private connectionCallbacks: ((connected: boolean) => void)[] = [];
   private logCallbacks: ((log: { direction: 'IN' | 'OUT' | 'SYS'; topic?: string; payload: string; time: string }) => void)[] = [];
+  private watchdogInterval: any = null;
+  private connectTime: number = 0;
 
   // State cache
   public state: TelemetryState = {
@@ -29,6 +31,9 @@ class MqttService {
     vboxHeartbeat: 0,
     plcHeartbeat: 0,
     heartbeatAlive: false,
+    vboxCommOk: true,
+    vboxAlarmMsg: '',
+    lastVboxSeenAt: 0,
     plcCommOk: true,
     plcAlarmMsg: '',
     tempThreshold: 25.0,
@@ -82,6 +87,8 @@ class MqttService {
       this.client.on('connect', () => {
         this.isConnecting = false;
         this.state.mqttConnected = true;
+        this.connectTime = Date.now();
+        this.startWatchdog();
         this.emitConnection(true);
         this.emitLog('SYS', `Đã kết nối MQTT Broker thành công! ClientID: ${clientId}`);
 
@@ -116,10 +123,53 @@ class MqttService {
     }
   }
 
+  private startWatchdog() {
+    if (this.watchdogInterval) return;
+    this.watchdogInterval = setInterval(() => {
+      this.checkVboxLiveness();
+    }, 1000);
+  }
+
+  private checkVboxLiveness() {
+    if (!this.state.mqttConnected) return;
+    const now = Date.now();
+
+    if (this.state.lastVboxSeenAt > 0) {
+      const elapsed = now - this.state.lastVboxSeenAt;
+      if (elapsed > 15000) {
+        if (this.state.vboxCommOk) {
+          this.state.vboxCommOk = false;
+          this.state.heartbeatAlive = false;
+          this.state.vboxAlarmMsg = `MẤT TÍN HIỆU TỪ V-BOX GATEWAY (${Math.round(elapsed / 1000)}s)! V-Box có thể bị mất điện hoặc mất mạng Internet/Wi-Fi.`;
+          this.emitTelemetry();
+          this.emitLog('SYS', `[CẢNH BÁO] ${this.state.vboxAlarmMsg}`);
+        }
+      }
+    } else if (this.connectTime > 0 && now - this.connectTime > 15000) {
+      if (this.state.vboxCommOk) {
+        this.state.vboxCommOk = false;
+        this.state.heartbeatAlive = false;
+        this.state.vboxAlarmMsg = 'CHƯA NHẬN ĐƯỢC TÍN HIỆU TỪ V-BOX (>15s)! V-Box Gateway hiện đang Offline.';
+        this.emitTelemetry();
+        this.emitLog('SYS', `[CẢNH BÁO] ${this.state.vboxAlarmMsg}`);
+      }
+    }
+  }
+
   private handleIncomingMessage(topic: string, msg: string) {
     this.emitLog('IN', msg, topic);
     this.state.lastReceived = msg;
-    this.state.lastReceivedAt = Date.now();
+    const now = Date.now();
+    this.state.lastReceivedAt = now;
+    this.state.lastVboxSeenAt = now;
+
+    if (!this.state.vboxCommOk) {
+      this.state.vboxCommOk = true;
+      this.state.heartbeatAlive = true;
+      this.state.vboxAlarmMsg = '';
+      this.emitLog('SYS', '[THÔNG BÁO] Đã nhận lại tín hiệu từ V-BOX Gateway!');
+      this.emitTelemetry();
+    }
 
     try {
       const data = JSON.parse(msg);

@@ -74,8 +74,11 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* 1. Banner cảnh báo khẩn cấp khi mất RS485 */}
+      {/* 1. Banner cảnh báo khẩn cấp khi mất V-BOX hoặc RS485 PLC */}
       <AlarmBanner
+        vboxCommOk={telemetry.vboxCommOk}
+        vboxAlarmMsg={telemetry.vboxAlarmMsg}
+        vboxHeartbeat={telemetry.vboxHeartbeat}
         plcCommOk={telemetry.plcCommOk}
         plcAlarmMsg={telemetry.plcAlarmMsg}
         plcHeartbeat={telemetry.plcHeartbeat}
@@ -85,6 +88,7 @@ export default function DashboardPage() {
       <ConnectionBar
         mqttConnected={telemetry.mqttConnected}
         vboxHeartbeat={telemetry.vboxHeartbeat}
+        vboxCommOk={telemetry.vboxCommOk}
         plcHeartbeat={telemetry.plcHeartbeat}
         plcCommOk={telemetry.plcCommOk}
         vboxTime={telemetry.vboxTime}

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Download, Upload, Cloud, Check, Clock } from 'lucide-react';
+import { X, Plus, Trash2, Download, Upload, Cloud, Check, Clock, Calendar, Repeat } from 'lucide-react';
 import { DeviceConfig, ScheduleSlot } from '@/lib/types';
 import { mqttService } from '@/lib/mqtt-client';
 import { supabase } from '@/lib/supabase';
@@ -16,23 +16,28 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({ device, onClose })
   const [statusMsg, setStatusMsg] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
+  // Ngày mặc định cho thanh công cụ áp dụng nhanh (YYYY-MM-DD)
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [quickDate, setQuickDate] = useState<string>(todayStr);
+
   useEffect(() => {
     if (!device) return;
 
-    // 1. Thử tải lịch từ Supabase hoặc localStorage
+    // 1. Thử tải lịch từ localStorage
     const saved = localStorage.getItem(`vbox_sched_${device.key}`);
     if (saved) {
       try {
-        setSlots(JSON.parse(saved));
+        const parsed: ScheduleSlot[] = JSON.parse(saved);
+        setSlots(parsed.map(normalizeSlot));
       } catch (e) {
-        // Fallback mặc định
+        // Fallback
       }
     } else {
-      // Mặc định tạo 1 khung mẫu
+      // Mặc định tạo 3 khung mẫu
       setSlots([
-        { start: '07:00', stop: '07:15', enable: true },
-        { start: '11:30', stop: '11:45', enable: true },
-        { start: '17:00', stop: '17:20', enable: true },
+        { start: '07:00', stop: '07:15', day: 0, month: 0, year: 0, enable: true },
+        { start: '11:30', stop: '11:45', day: 0, month: 0, year: 0, enable: true },
+        { start: '17:00', stop: '17:20', day: 0, month: 0, year: 0, enable: true },
       ]);
     }
 
@@ -40,7 +45,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({ device, onClose })
     const unsub = mqttService.onSchedules((devKey, incomingSlots) => {
       if (devKey === device.key || devKey === 'all') {
         if (incomingSlots && incomingSlots.length > 0) {
-          setSlots(incomingSlots);
+          setSlots(incomingSlots.map(normalizeSlot));
           showStatus(`Đã nhận ${incomingSlots.length} khung giờ thực tế từ V-Box`);
         }
       }
@@ -54,6 +59,23 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({ device, onClose })
 
   if (!device) return null;
 
+  // Chuẩn hóa slot đảm bảo có dateStr
+  function normalizeSlot(s: ScheduleSlot): ScheduleSlot {
+    let dateStr = s.dateStr || '';
+    if (!dateStr && s.day && s.month && s.day > 0) {
+      const y = s.year || new Date().getFullYear();
+      dateStr = `${y}-${String(s.month).padStart(2, '0')}-${String(s.day).padStart(2, '0')}`;
+    }
+    return {
+      ...s,
+      day: s.day || 0,
+      month: s.month || 0,
+      year: s.year || 0,
+      dateStr,
+      enable: s.enable !== false,
+    };
+  }
+
   const showStatus = (msg: string) => {
     setStatusMsg(msg);
     setTimeout(() => setStatusMsg(''), 4000);
@@ -66,7 +88,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({ device, onClose })
     }
     setSlots([
       ...slots,
-      { start: '08:00', stop: '08:15', enable: true },
+      { start: '08:00', stop: '08:15', day: 0, month: 0, year: 0, dateStr: '', enable: true },
     ]);
   };
 
@@ -80,15 +102,60 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({ device, onClose })
     setSlots(updated);
   };
 
+  // Cập nhật ngày cho 1 slot
+  const handleSlotDateChange = (index: number, dateVal: string) => {
+    const updated = [...slots];
+    if (!dateVal) {
+      // Hàng ngày
+      updated[index] = { ...updated[index], day: 0, month: 0, year: 0, dateStr: '' };
+    } else {
+      const [y, m, d] = dateVal.split('-').map(Number);
+      updated[index] = { ...updated[index], day: d, month: m, year: y, dateStr: dateVal };
+    }
+    setSlots(updated);
+  };
+
+  // Áp dụng "Hàng ngày" cho tất cả các khung giờ
+  const handleApplyDailyAll = () => {
+    setSlots(slots.map(s => ({ ...s, day: 0, month: 0, year: 0, dateStr: '' })));
+    showStatus('Đã chuyển tất cả khung giờ sang chế độ "Lặp lại hàng ngày"');
+  };
+
+  // Áp dụng ngày đã chọn cho tất cả các khung giờ
+  const handleApplySpecificDateAll = () => {
+    if (!quickDate) return;
+    const [y, m, d] = quickDate.split('-').map(Number);
+    setSlots(slots.map(s => ({ ...s, day: d, month: m, year: y, dateStr: quickDate })));
+    showStatus(`Đã áp dụng ngày ${d}/${m}/${y} cho tất cả khung giờ`);
+  };
+
   // Nạp lịch xuống V-Box qua MQTT
   const handleDeployToVbox = () => {
+    // Chuẩn bị payload chuẩn V-Box
+    const payloadSlots = slots.map(s => {
+      const [sh, sm] = (s.start || '00:00').split(':').map(Number);
+      const [eh, em] = (s.stop || '00:00').split(':').map(Number);
+      return {
+        start: s.start,
+        stop: s.stop,
+        start_h: sh || 0,
+        start_m: sm || 0,
+        end_h: eh || 0,
+        end_m: em || 0,
+        day: s.day || 0,
+        month: s.month || 0,
+        year: s.year || 0,
+        enable: s.enable !== false ? 1 : 0,
+      };
+    });
+
     // Lưu vào LocalStorage
     localStorage.setItem(`vbox_sched_${device.key}`, JSON.stringify(slots));
 
-    // Gửi qua MQTT
-    const ok = mqttService.setDeviceSchedules(device.key, slots);
+    // Gửi qua MQTT xuống V-Box
+    const ok = mqttService.setDeviceSchedules(device.key, payloadSlots as any);
     if (ok) {
-      showStatus(`Đã nạp ${slots.length} khung giờ xuống V-Box & PLC!`);
+      showStatus(`Đã nạp ${slots.length} khung giờ xuống V-Box & PLC thành công!`);
     } else {
       showStatus('Lỗi: Chưa kết nối MQTT Broker!');
     }
@@ -111,13 +178,11 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({ device, onClose })
 
     try {
       setIsLoading(true);
-      // Xóa các slot cũ của device này
       await supabase.from('device_schedules').delete().eq('device_key', device.key);
 
-      // Thêm danh sách mới
       const records = slots.map((s, idx) => {
-        const [sh, sm] = s.start.split(':').map(Number);
-        const [eh, em] = s.stop.split(':').map(Number);
+        const [sh, sm] = (s.start || '00:00').split(':').map(Number);
+        const [eh, em] = (s.stop || '00:00').split(':').map(Number);
         return {
           device_key: device.key,
           slot_index: idx,
@@ -130,6 +195,7 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({ device, onClose })
           end_m: em || 0,
           day: s.day || 0,
           month: s.month || 0,
+          year: s.year || 0,
         };
       });
 
@@ -151,11 +217,11 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({ device, onClose })
             <div className="flex items-center gap-2">
               <Clock className="w-5 h-5 text-sky-600" />
               <h3 className="text-base font-bold text-slate-900">
-                Lịch Hẹn Thời Gian Thực: {device.name}
+                Cài Đặt Lịch Hẹn: {device.name}
               </h3>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Hỗ trợ tối đa <b>{device.maxSlots} khung giờ</b> trong ngày • Tự động kích hoạt theo đồng hồ RTC V-Box
+              Hỗ trợ tối đa <b>{device.maxSlots} khung giờ</b> • Chủ động chọn ngày cụ thể hoặc lặp lại hàng ngày
             </p>
           </div>
 
@@ -175,60 +241,125 @@ export const ScheduleModal: React.FC<ScheduleModalProps> = ({ device, onClose })
           </div>
         )}
 
+        {/* Thanh công cụ chọn ngày nhanh */}
+        <div className="mx-5 mt-3 p-3 bg-sky-50/70 border border-sky-100 rounded-xl flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-xs">
+            <Calendar className="w-4 h-4 text-sky-700" />
+            <span className="font-bold text-slate-700">Chọn ngày áp dụng:</span>
+            <input
+              type="date"
+              value={quickDate}
+              onChange={(e) => setQuickDate(e.target.value)}
+              className="px-2 py-1 bg-white border border-slate-300 rounded text-xs font-semibold text-slate-800 focus:outline-sky-500"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleApplySpecificDateAll}
+              className="px-2.5 py-1 bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold rounded-md shadow-xs transition-colors"
+              title="Gán ngày đang chọn ở ô trên cho tất cả khung giờ"
+            >
+              Áp dụng ngày này cho tất cả
+            </button>
+            <button
+              onClick={handleApplyDailyAll}
+              className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-md border border-slate-300 transition-colors flex items-center gap-1"
+              title="Đặt lại tất cả khung giờ chạy lặp lại hàng ngày"
+            >
+              <Repeat className="w-3 h-3 text-slate-500" />
+              <span>Chạy hàng ngày</span>
+            </button>
+          </div>
+        </div>
+
         {/* Body list of slots */}
         <div className="p-5 overflow-y-auto flex-1 space-y-3">
           {slots.length === 0 ? (
             <div className="text-center py-10 text-slate-400 text-xs">
-              Chưa có khung giờ nào được cài đặt. Hãy bấm nút <b>Thêm Khung Giờ</b> bên dưới.
+              Chưa có khung giờ nào được cài đặt. Hãy bấm nút <b>Thêm Khung Giờ Mới</b> bên dưới.
             </div>
           ) : (
-            slots.map((slot, idx) => (
-              <div
-                key={idx}
-                className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center">
-                    {idx + 1}
-                  </span>
-                  <label className="text-xs font-semibold text-slate-600">Bật:</label>
-                  <input
-                    type="time"
-                    value={slot.start}
-                    onChange={(e) => handleUpdateSlot(idx, 'start', e.target.value)}
-                    className="px-2 py-1 bg-white border border-slate-300 rounded text-xs font-bold text-slate-800 focus:outline-sky-500"
-                  />
-                  <span className="text-slate-400">&rarr;</span>
-                  <label className="text-xs font-semibold text-slate-600">Tắt:</label>
-                  <input
-                    type="time"
-                    value={slot.stop}
-                    onChange={(e) => handleUpdateSlot(idx, 'stop', e.target.value)}
-                    className="px-2 py-1 bg-white border border-slate-300 rounded text-xs font-bold text-slate-800 focus:outline-sky-500"
-                  />
-                </div>
+            slots.map((slot, idx) => {
+              const isSpecificDate = Boolean(slot.day && slot.day > 0);
 
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+              return (
+                <div
+                  key={idx}
+                  className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl hover:border-slate-300 transition-colors"
+                >
+                  {/* Giờ bật & Giờ tắt */}
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0">
+                      {idx + 1}
+                    </span>
+                    <label className="text-xs font-semibold text-slate-600">Bật:</label>
                     <input
-                      type="checkbox"
-                      checked={slot.enable !== false}
-                      onChange={(e) => handleUpdateSlot(idx, 'enable', e.target.checked)}
-                      className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                      type="time"
+                      value={slot.start}
+                      onChange={(e) => handleUpdateSlot(idx, 'start', e.target.value)}
+                      className="px-2 py-1 bg-white border border-slate-300 rounded text-xs font-bold text-slate-800 focus:outline-sky-500"
                     />
-                    <span>Kích hoạt</span>
-                  </label>
+                    <span className="text-slate-400">&rarr;</span>
+                    <label className="text-xs font-semibold text-slate-600">Tắt:</label>
+                    <input
+                      type="time"
+                      value={slot.stop}
+                      onChange={(e) => handleUpdateSlot(idx, 'stop', e.target.value)}
+                      className="px-2 py-1 bg-white border border-slate-300 rounded text-xs font-bold text-slate-800 focus:outline-sky-500"
+                    />
+                  </div>
 
-                  <button
-                    onClick={() => handleRemoveSlot(idx)}
-                    className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded transition-colors"
-                    title="Xóa khung giờ này"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {/* Chọn ngày riêng cho khung giờ này */}
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={isSpecificDate ? 'specific' : 'daily'}
+                      onChange={(e) => {
+                        if (e.target.value === 'daily') {
+                          handleSlotDateChange(idx, '');
+                        } else {
+                          handleSlotDateChange(idx, quickDate || todayStr);
+                        }
+                      }}
+                      className="px-2 py-1 bg-white border border-slate-300 rounded text-xs font-medium text-slate-700 focus:outline-sky-500"
+                    >
+                      <option value="daily">🔄 Hàng ngày</option>
+                      <option value="specific">📅 Ngày chỉ định</option>
+                    </select>
+
+                    {isSpecificDate && (
+                      <input
+                        type="date"
+                        value={slot.dateStr || ''}
+                        onChange={(e) => handleSlotDateChange(idx, e.target.value)}
+                        className="px-2 py-1 bg-white border border-sky-300 rounded text-xs font-bold text-sky-900 focus:outline-sky-500"
+                      />
+                    )}
+                  </div>
+
+                  {/* Kích hoạt & Xóa */}
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={slot.enable !== false}
+                        onChange={(e) => handleUpdateSlot(idx, 'enable', e.target.checked)}
+                        className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                      />
+                      <span>Kích hoạt</span>
+                    </label>
+
+                    <button
+                      onClick={() => handleRemoveSlot(idx)}
+                      className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded transition-colors"
+                      title="Xóa khung giờ này"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
 
           {slots.length < device.maxSlots && (

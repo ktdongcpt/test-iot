@@ -43,6 +43,7 @@ export interface ScheduleSlot {
   day?: number;
   month?: number;
   year?: number;
+  dateStr?: string; // "YYYY-MM-DD"
   enable?: boolean;
 }
 
@@ -52,6 +53,9 @@ export interface TelemetryState {
   vboxHeartbeat: number;
   plcHeartbeat: number;
   heartbeatAlive: boolean;
+  vboxCommOk: boolean;
+  vboxAlarmMsg: string;
+  lastVboxSeenAt: number;
   plcCommOk: boolean;
   plcAlarmMsg: string;
   tempThreshold: number;

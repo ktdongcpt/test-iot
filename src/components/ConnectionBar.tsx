@@ -7,6 +7,7 @@ import { mqttService } from '@/lib/mqtt-client';
 interface ConnectionBarProps {
   mqttConnected: boolean;
   vboxHeartbeat: number;
+  vboxCommOk?: boolean;
   plcHeartbeat: number;
   plcCommOk: boolean;
   vboxTime: string;
@@ -16,6 +17,7 @@ interface ConnectionBarProps {
 export const ConnectionBar: React.FC<ConnectionBarProps> = ({
   mqttConnected,
   vboxHeartbeat,
+  vboxCommOk = true,
   plcHeartbeat,
   plcCommOk,
   vboxTime,
@@ -38,9 +40,24 @@ export const ConnectionBar: React.FC<ConnectionBarProps> = ({
         </div>
 
         {/* Badge V-Box Heartbeat */}
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+        <div
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border ${
+            vboxCommOk
+              ? 'bg-purple-50 text-purple-700 border-purple-200'
+              : 'bg-amber-50 text-amber-800 border-amber-300 font-bold animate-pulse'
+          }`}
+        >
           <Activity className="w-3.5 h-3.5" />
-          <span>V-Box HB: <b className="font-semibold">{vboxHeartbeat}/60</b> (@HDW12)</span>
+          <span>
+            V-Box:{' '}
+            {vboxCommOk ? (
+              <>
+                <b className="font-semibold">{vboxHeartbeat}/60</b> (@HDW12)
+              </>
+            ) : (
+              <span className="text-amber-800">MẤT MẠNG / OFFLINE</span>
+            )}
+          </span>
         </div>
 
         {/* Badge PLC Heartbeat */}
