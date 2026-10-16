@@ -237,26 +237,26 @@ export const EnvironmentalPanel: React.FC<EnvironmentalPanelProps> = ({
               </div>
             </div>
 
-            {/* Trạng thái 2 phao: Thiếu nước & Tràn nước */}
+            {/* Trạng thái 2 phao: Thiếu nước đáy & Tràn đỉnh */}
             <div className="grid grid-cols-2 gap-2 my-2">
               <div className={`p-2.5 rounded-lg border flex flex-col items-center justify-center text-center ${
                 isLackWater 
                   ? 'bg-amber-50 border-amber-200 text-amber-900' 
                   : 'bg-emerald-50 border-emerald-200 text-emerald-900'
               }`}>
-                <span className="text-[11px] text-slate-500 font-medium">Mực nước bể</span>
+                <span className="text-[11px] text-slate-500 font-medium">Phao đáy bể</span>
                 <span className={`text-xs font-bold mt-0.5 flex items-center gap-1 ${
                   isLackWater ? 'text-amber-700 animate-pulse' : 'text-emerald-700'
                 }`}>
                   {isLackWater ? (
                     <>
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                      THIẾU NƯỚC
+                      CẠN ĐÁY (BẬT)
                     </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                      ĐỦ NƯỚC
+                      TRÊN ĐÁY (ĐỦ)
                     </>
                   )}
                 </span>
@@ -268,19 +268,19 @@ export const EnvironmentalPanel: React.FC<EnvironmentalPanelProps> = ({
                   ? 'bg-rose-50 border-rose-300 text-rose-900 animate-pulse' 
                   : 'bg-emerald-50 border-emerald-200 text-emerald-900'
               }`}>
-                <span className="text-[11px] text-slate-500 font-medium">Trạng thái tràn</span>
+                <span className="text-[11px] text-slate-500 font-medium">Phao đỉnh bể</span>
                 <span className={`text-xs font-bold mt-0.5 flex items-center gap-1 ${
                   isOverflow ? 'text-rose-700 font-black' : 'text-emerald-700'
                 }`}>
                   {isOverflow ? (
                     <>
                       <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
-                      🚨 ĐANG TRÀN!
+                      🚨 ĐẦY / TRÀN ĐỈNH
                     </>
                   ) : (
                     <>
                       <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                      CHƯA TRÀN
+                      CHƯA ĐẦY ĐỈNH
                     </>
                   )}
                 </span>
@@ -291,7 +291,7 @@ export const EnvironmentalPanel: React.FC<EnvironmentalPanelProps> = ({
 
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
             <span className="text-slate-600">
-              Chế độ bơm: <b>{autoPumpMode ? 'Tự động cấp bể' : 'Thủ công'}</b>
+              Chế độ bơm: <b>{autoPumpMode ? (stateMayBom ? 'Bơm dâng tới đỉnh' : 'Chờ dùng cạn đáy') : 'Thủ công / RTC'}</b>
             </span>
             <div className="flex items-center gap-1.5">
               <span className="text-slate-500">Máy bơm:</span>

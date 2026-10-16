@@ -312,58 +312,59 @@ export const AutoControlPanel: React.FC<AutoControlPanelProps> = ({
               </label>
             </div>
 
+            {/* Dynamic Status Badge */}
             <div className="text-xs mb-3">
               <span
                 className={`px-2.5 py-1 rounded-full font-semibold ${
-                  autoPumpMode
-                    ? 'bg-blue-100 text-blue-800'
-                    : 'bg-slate-200 text-slate-600'
+                  !autoPumpMode
+                    ? 'bg-slate-200 text-slate-600'
+                    : isOverflow
+                    ? 'bg-rose-100 text-rose-800 font-bold animate-pulse'
+                    : stateMayBom
+                    ? 'bg-cyan-100 text-cyan-800 font-bold animate-pulse'
+                    : 'bg-blue-100 text-blue-800'
                 }`}
               >
-                {autoPumpMode ? 'Đang chạy: Tự động theo phao' : 'Đang chạy: Thủ công / Lịch RTC'}
+                {!autoPumpMode
+                  ? 'ĐANG TẮT: THỦ CÔNG / LỊCH HẸN RTC'
+                  : isOverflow
+                  ? 'TỰ ĐỘNG: ĐẦY/TRÀN NƯỚC (ĐÃ NGẮT BƠM)'
+                  : stateMayBom
+                  ? 'TỰ ĐỘNG: ĐANG BƠM NƯỚC (CHỜ ĐẦY ĐỈNH)'
+                  : 'TỰ ĐỘNG: ĐỦ NƯỚC (CHỜ DÙNG CẠN ĐÁY)'}
               </span>
             </div>
 
-            {/* Chi tiết nguyên lý và trạng thái phao trực quan */}
+            {/* Chi tiết nguyên lý 3 nấc của thuật toán 2 phao */}
             <div className="space-y-2 text-xs">
               <div className="p-2.5 bg-white border border-slate-200 rounded-lg flex items-center justify-between">
-                <span className="text-slate-600">Phao mực nước (HDX5.0):</span>
-                <span className={`font-bold flex items-center gap-1 ${isLackWater ? 'text-amber-600 animate-pulse' : 'text-emerald-600'}`}>
-                  {isLackWater ? (
-                    <>
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      Thiếu &rarr; Bật bơm
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      Đủ &rarr; Tắt bơm
-                    </>
-                  )}
+                <span className="text-slate-600">Thiếu nước đáy (HDX5.0 = 1):</span>
+                <span className={`font-bold flex items-center gap-1 ${isLackWater ? 'text-emerald-600 animate-pulse' : 'text-slate-500'}`}>
+                  {isLackWater ? <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> : null}
+                  Kích hoạt BẬT bơm
                 </span>
               </div>
 
               <div className="p-2.5 bg-white border border-slate-200 rounded-lg flex items-center justify-between">
-                <span className="text-slate-600">Phao chống tràn (HDX5.1):</span>
-                <span className={`font-bold flex items-center gap-1 ${isOverflow ? 'text-rose-600 animate-pulse font-black' : 'text-emerald-600'}`}>
-                  {isOverflow ? (
-                    <>
-                      <AlertCircle className="w-3.5 h-3.5" />
-                      Tràn &rarr; Khóa dừng khẩn!
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      Chưa tràn (An toàn)
-                    </>
-                  )}
+                <span className="text-slate-600">Nước dâng giữa bể (HDX5.0 = 0):</span>
+                <span className={`font-bold text-sky-700 ${(!isLackWater && !isOverflow && stateMayBom) ? 'animate-pulse' : ''}`}>
+                  Tiếp tục BƠM tới đỉnh
                 </span>
               </div>
 
               <div className="p-2.5 bg-white border border-slate-200 rounded-lg flex items-center justify-between">
-                <span className="text-slate-600">Trạng thái Máy bơm:</span>
-                <span className={`font-bold ${stateMayBom ? 'text-blue-600 animate-pulse' : 'text-slate-500'}`}>
-                  {stateMayBom ? 'Đang chạy cấp nước' : 'Đang dừng'}
+                <span className="text-slate-600">Tràn đỉnh bể (HDX5.1 = 0):</span>
+                <span className={`font-bold flex items-center gap-1 ${isOverflow ? 'text-rose-600 animate-pulse font-black' : 'text-slate-500'}`}>
+                  {isOverflow ? <AlertCircle className="w-3.5 h-3.5 text-rose-600" /> : null}
+                  NGỪNG BƠM HOÀN TOÀN
+                </span>
+              </div>
+
+              <div className="p-2.5 bg-slate-100/70 border border-slate-200 rounded-lg flex items-center justify-between">
+                <span className="text-slate-600 font-medium">Trạng thái Máy bơm:</span>
+                <span className={`font-bold flex items-center gap-1 ${stateMayBom ? 'text-blue-600 animate-pulse' : 'text-slate-500'}`}>
+                  <Waves className="w-3.5 h-3.5" />
+                  {stateMayBom ? 'Đang chạy cấp nước' : 'Đang ngừng bơm'}
                 </span>
               </div>
             </div>
@@ -371,10 +372,11 @@ export const AutoControlPanel: React.FC<AutoControlPanelProps> = ({
 
           <div className="mt-4 pt-3 border-t border-slate-200">
             <div className="p-2 rounded bg-blue-50 border border-blue-200 text-[11px] text-blue-900 leading-relaxed">
-              🔒 <b>Bảo vệ an toàn:</b> Khi bật chế độ tự động, công tắc thủ công của Máy bơm sẽ được khóa trên giao diện để tránh thao tác nhầm làm tràn bể chứa.
+              • <b>Chu trình 2 phao tự động:</b> Thiếu nước đáy &rarr; Tự bật bơm &rarr; Bơm liên tục tới khi tràn đỉnh thì ngừng &rarr; Dùng nước cạn đáy lặp lại.<br />
+              • <b>Bảo vệ an toàn:</b> Tự động khóa công tắc thủ công của Máy bơm để chống thao tác nhầm làm tràn bể chứa.
             </div>
             <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
-              • Khi gạt TẮT: Cho phép điều khiển thủ công hoặc chạy theo các khung giờ hẹn RTC.
+              • Khi gạt TẮT: Cho phép điều khiển nút nhấn thủ công hoặc chạy theo các khung giờ hẹn RTC.
             </p>
           </div>
         </div>

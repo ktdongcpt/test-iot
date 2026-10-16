@@ -126,7 +126,7 @@ bool stateLoa3         = false; // Phản hồi @B_0#HDX1.9
 bool stateMayBom       = false; // Phản hồi @B_0#HDX1.10
 bool stateBayThienDich = false; // Phản hồi @B_0#HDX1.11
 
-// Cảm biến mực nước (@B_0#HDX5.0: 1 = Đủ nước, 0 = Thiếu nước; @B_0#HDX5.1: 1 = Chưa tràn, 0 = Tràn)
+// Cảm biến mực nước (@B_0#HDX5.0: 0 = Đủ nước, 1 = Thiếu nước; @B_0#HDX5.1: 1 = Chưa tràn, 0 = Tràn)
 int waterEmpty = 0;    // 1: Thiếu nước, 0: Đủ nước
 int waterSafe = 1;     // 1: Chưa tràn, 0: Tràn
 int waterOverflow = 0; // 1: Đang tràn, 0: Bình thường
@@ -677,21 +677,21 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <div>
             <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 0.8rem; color: var(--text);">
               <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                <span style="color: var(--muted);">Thiếu nước (HDX5.0 = 0):</span>
-                <strong style="color: #10b981;">Tự kích BẬT bơm</strong>
+                <span style="color: var(--muted);">Thiếu nước đáy (HDX5.0 = 1):</span>
+                <strong style="color: #10b981;">Kích hoạt BẬT bơm</strong>
               </div>
               <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                <span style="color: var(--muted);">Đủ nước (HDX5.0 = 1):</span>
-                <strong style="color: #ef4444;">Tự kích DỪNG bơm</strong>
+                <span style="color: var(--muted);">Nước dâng giữa bể (HDX5.0 = 0):</span>
+                <strong style="color: #0284c7;">Tiếp tục BƠM tới đỉnh</strong>
               </div>
               <div style="display: flex; justify-content: space-between;">
-                <span style="color: var(--muted);">Tràn nước (HDX5.1 = 0):</span>
-                <strong style="color: #ef4444;">KHÓA DỪNG KHẨN CẤP</strong>
+                <span style="color: var(--muted);">Tràn đỉnh bể (HDX5.1 = 0):</span>
+                <strong style="color: #ef4444;">NGỪNG BƠM HOÀN TOÀN</strong>
               </div>
             </div>
 
             <p style="font-size: 0.74rem; color: var(--muted); margin: 0; line-height: 1.4;">
-              • <b>Gạt BẬT:</b> Cảm biến mực nước tự động bơm khi thiếu nước, dừng khi đầy hoặc tràn.<br>
+              • <b>Chu trình tự động:</b> Thiếu nước đáy &rarr; Tự bật bơm &rarr; Bơm liên tục tới khi tràn đỉnh thì ngừng &rarr; Dùng nước cạn đáy lặp lại.<br>
               • <b>Gạt TẮT:</b> Điều khiển nút nhấn thủ công hoặc theo lịch hẹn RTC.
             </p>
           </div>
@@ -1668,8 +1668,17 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           swPump.checked = !!data.autoPumpMode;
           updatePumpControlLock(!!data.autoPumpMode);
           if (data.autoPumpMode) {
-            bPump.className = 'badge badge-ok';
-            bPump.innerText = 'ĐANG BẬT: TỰ ĐỘNG THEO MỰC NƯỚC';
+            const isPumping = (data.devices && data.devices.may_bom == 1);
+            if (data.waterOverflow == 1 || data.waterSafe == 0) {
+              bPump.className = 'badge badge-err';
+              bPump.innerText = 'TỰ ĐỘNG: ĐẦY/TRÀN NƯỚC (ĐÃ NGẮT BƠM)';
+            } else if (isPumping) {
+              bPump.className = 'badge badge-ok';
+              bPump.innerText = 'TỰ ĐỘNG: ĐANG BƠM NƯỚC (CHỜ ĐẦY ĐỈNH)';
+            } else {
+              bPump.className = 'badge badge-ok';
+              bPump.innerText = 'TỰ ĐỘNG: ĐỦ NƯỚC (CHỜ DÙNG CẠN ĐÁY)';
+            }
           } else {
             bPump.className = 'badge badge-hb';
             bPump.innerText = 'ĐANG TẮT: THỦ CÔNG / LỊCH HẸN RTC';
