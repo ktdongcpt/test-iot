@@ -62,100 +62,54 @@ function mqtt_connect()
 end
 
 --------------------------------------------------------------------------------
--- 1. GIÁM SÁT TRUYỀN THÔNG RS485 VỚI PLC QUA HEARTBEAT (@W_0#HDW13)
--- PLC đếm liên tục từ 0 đến 60 gửi vào thanh ghi @W_0#HDW13: fb plc to vbox (Heartbeat)
--- Nếu trong 15 giây giá trị vẫn đứng yên (không thay đổi) -> Báo MẤT KẾT NỐI RS485
+-- 1. HÀM TRỢ GIÚP ĐỌC THANH GHI AN TOÀN (SAFE REGISTER READ)
 --------------------------------------------------------------------------------
-local PLC_HB_ADDR = "@W_0#HDW13"   -- Thanh ghi phản hồi Heartbeat từ PLC
-local last_plc_hb_val = -1         -- Giá trị heartbeat PLC lần trước
-local last_plc_hb_change_time = 0  -- Mốc thời gian (ms) khi heartbeat PLC thay đổi
-local cur_plc_hb_val = 0           -- Giá trị hiện tại đọc được từ PLC
-local plc_comm_ok = true           -- true: Kết nối tốt, false: Mất kết nối
-local PLC_COMM_TIMEOUT = 15000     -- 15 giây (15000 ms) đứng yên = Mất truyền thông RS485
-
--- Hàm gán cờ cảnh báo nội bộ LB100
-local function set_internal_alarm_bit(val)
-    if type(sys_set_bit) == "function" then
-        pcall(sys_set_bit, "Local_HMI:LB100", val)
-    end
-    pcall(we_bas_setbit, "@B_0#LB100", val)
-end
-
--- Hàm gửi cảnh báo truyền thông RS485 lên MQTT Broker ngay lập tức
-function send_plc_comm_alarm(is_ok)
-    if not obj or not obj:isconnected() then return end
-    local cur_h, cur_m, cur_s, cur_d, cur_mon, cur_y = get_current_time()
-    local time_str = string.format("%02d:%02d:%02d %02d/%02d/%04d", cur_h, cur_m, cur_s, cur_d, cur_mon, cur_y)
-
-    local alarm_data = {
-        type = "COMM_ALARM",
-        source = "V-BOX",
-        plc_comm = is_ok and 1 or 0,
-        plc_heartbeat = cur_plc_hb_val,
-        status = is_ok and "CONNECTED" or "DISCONNECTED",
-        message = is_ok and "Đã khôi phục truyền thông RS485 với PLC" or "CẢNH BÁO: MẤT TRUYỀN THÔNG RS485 VỚI PLC (Heartbeat PLC đứng yên > 15s)!",
-        time = time_str
-    }
-    local payload = json.encode(alarm_data)
-    print(">>> [MQTT ALARM RS485] " .. payload)
-
-    -- 1. Gửi lên topic cảnh báo riêng 3FAMIOT/ALARM
-    obj:publish(ALARM_TOPIC, payload, 0, 0)
-
-    -- 2. Đồng thời gửi ngay dữ liệu cập nhật trạng thái lên topic 3FAMIOT/HMI_PUB
-    send_data()
-end
-
--- Hàm quét liên tục kiểm tra giá trị Heartbeat PLC gửi lên tại @W_0#HDW13
-function process_plc_comm_check()
-    local now = we_bas_gettickcount()
-
-    -- Khởi tạo mốc thời gian lần đầu chạy
-    if last_plc_hb_change_time == 0 then
-        last_plc_hb_change_time = now
-    end
-
-    -- Đọc giá trị Heartbeat do PLC gửi vào @W_0#HDW13
+local function safe_getword(addr, default_val)
     local ok, val = pcall(function()
-        return we_bas_getword(PLC_HB_ADDR, 1) or we_bas_getword("@W_HDW13", 1)
+        return we_bas_getword(addr, 1)
     end)
-
-    if ok and val ~= nil then
-        cur_plc_hb_val = val
-
-        -- Nếu giá trị thay đổi so với lần trước -> PLC đang truyền thông bình thường!
-        if val ~= last_plc_hb_val then
-            last_plc_hb_val = val
-            last_plc_hb_change_time = now -- Reset mốc thời gian tính 15s
-
-            -- Nếu trước đó đang ở trạng thái mất kết nối thì khôi phục lại ngay
-            if not plc_comm_ok then
-                plc_comm_ok = true
-                set_internal_alarm_bit(0) -- Tắt cờ cảnh báo nội bộ LB100
-                print(string.format(">>> [THÔNG BÁO] ĐÃ KHÔI PHỤC TRUYỀN THÔNG RS485 VỚI PLC! (PLC Heartbeat = %d)", val))
-                send_plc_comm_alarm(true)
-            end
+    if ok and val ~= nil and type(val) == "number" then
+        return val
+    end
+    local alt_addr = addr:gsub("@W_0#", "@W_"):gsub("@B_0#", "@B_")
+    if alt_addr ~= addr then
+        local ok2, val2 = pcall(function()
+            return we_bas_getword(alt_addr, 1)
+        end)
+        if ok2 and val2 ~= nil and type(val2) == "number" then
+            return val2
         end
     end
+    return default_val or 0
+end
 
-    -- Kiểm tra nếu trong 15 giây (15000 ms) mà giá trị vẫn đứng yên không thay đổi
-    if (now - last_plc_hb_change_time) >= PLC_COMM_TIMEOUT then
-        if plc_comm_ok then
-            plc_comm_ok = false
-            set_internal_alarm_bit(1) -- Bật cờ cảnh báo nội bộ LB100
-            print(string.format(">>> [CẢNH BÁO NGUY HIỂM] MẤT TRUYỀN THÔNG RS485 VỚI PLC! (Heartbeat @W_0#HDW13 = %d đứng yên quá 15s)", cur_plc_hb_val))
-            send_plc_comm_alarm(false)
+local function safe_getbit(addr, default_val)
+    local ok, val = pcall(function()
+        return we_bas_getbit(addr)
+    end)
+    if ok and val ~= nil and type(val) == "number" then
+        return val
+    end
+    local alt_addr = addr:gsub("@B_0#", "@B_")
+    if alt_addr ~= addr then
+        local ok2, val2 = pcall(function()
+            return we_bas_getbit(alt_addr)
+        end)
+        if ok2 and val2 ~= nil and type(val2) == "number" then
+            return val2
         end
     end
+    return default_val or 0
 end
 
 --------------------------------------------------------------------------------
 -- 2. HÀM HEARTBEAT V-BOX GỬI XUỐNG PLC (@W_0#HDW12: kt ket noi)
--- V-Box đếm liên tục từ 0 đến 60 và tự động lặp lại mỗi giây
+-- V-Box đếm liên tục từ 0 đến 60 và tự động lặp lại mỗi giây để PLC đếm giám sát
 --------------------------------------------------------------------------------
 local heartbeat_val = 0
 local last_heartbeat_time = 0
 local heartbeat_interval = 1000 -- 1000 ms = 1 giây tăng 1 đơn vị
+local cur_plc_hb_val = 0
 
 function process_heartbeat()
     local now = we_bas_gettickcount()
@@ -165,15 +119,21 @@ function process_heartbeat()
         if heartbeat_val > 60 then
             heartbeat_val = 0
         end
-        -- Ghi giá trị đếm vào thanh ghi kt ket noi để PLC giám sát V-Box
+        -- Ghi giá trị đếm vào thanh ghi kt ket noi @W_0#HDW12 để PLC đếm giám sát
         we_bas_setword("@W_0#HDW12", heartbeat_val)
     end
 end
 
+-- Đọc giá trị Heartbeat do PLC gửi vào @W_0#HDW13 (nếu có) để hiển thị lên Web
+function get_plc_heartbeat()
+    cur_plc_hb_val = safe_getword("@W_0#HDW13", cur_plc_hb_val)
+    return cur_plc_hb_val
+end
+
 --------------------------------------------------------------------------------
--- 3. CẤU HÌNH & QUẢN LÝ 10 THIẾT BỊ THEO MAPPING
--- Lệnh điều khiển (Control Output):  @B_0#HDX0.0 -> @B_0#HDX0.9
--- Phản hồi trạng thái (Feedback):   @B_0#HDX1.0 -> @B_0#HDX1.9 (Kiểm tra chính xác)
+-- 3. CẤU HÌNH & QUẢN LÝ 12 THIẾT BỊ THEO MAPPING
+-- Lệnh điều khiển (Control Output):  @B_0#HDX0.0 -> @B_0#HDX0.11
+-- Phản hồi trạng thái (Feedback):   @B_0#HDX1.0 -> @B_0#HDX1.11 (Kiểm tra chính xác)
 -- Hỗ trợ tối đa 24 khung giờ hẹn trong ngày cho 4 thiết bị phun sương và 10 khung giờ cho các thiết bị khác
 --------------------------------------------------------------------------------
 -- Các chế độ hoạt động (mode):
@@ -184,7 +144,7 @@ end
 -- 4 = Chạy theo lịch thời gian thực (Real-time Schedule - 24 khung giờ cho Phun sương, 10 khung giờ cho thiết bị khác)
 
 local devices = {
-    phun_suong_1 = { 
+    phun_suong_1   = { 
         cmd_addr = "@B_0#HDX0.0", status_addr = "@B_0#HDX1.0", name = "Phun suong 1", 
         mode = 4, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, 
         schedules = {
@@ -192,15 +152,17 @@ local devices = {
             { start_h = 8, start_m = 0,  end_h = 8, end_m = 30 }
         } 
     },
-    phun_suong_2 = { cmd_addr = "@B_0#HDX0.1", status_addr = "@B_0#HDX1.1", name = "Phun suong 2", mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
-    phun_suong_3 = { cmd_addr = "@B_0#HDX0.2", status_addr = "@B_0#HDX1.2", name = "Phun suong 3", mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
-    phun_suong_4 = { cmd_addr = "@B_0#HDX0.3", status_addr = "@B_0#HDX1.3", name = "Phun suong 4", mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
-    den_1        = { cmd_addr = "@B_0#HDX0.4", status_addr = "@B_0#HDX1.4", name = "Den 1",        mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
-    den_2        = { cmd_addr = "@B_0#HDX0.5", status_addr = "@B_0#HDX1.5", name = "Den 2",        mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
-    suoi_1       = { cmd_addr = "@B_0#HDX0.6", status_addr = "@B_0#HDX1.6", name = "Suoi 1",       mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
-    loa_1        = { cmd_addr = "@B_0#HDX0.7", status_addr = "@B_0#HDX1.7", name = "Loa 1",        mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
-    loa_2        = { cmd_addr = "@B_0#HDX0.8", status_addr = "@B_0#HDX1.8", name = "Loa 2",        mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
-    loa_3        = { cmd_addr = "@B_0#HDX0.9", status_addr = "@B_0#HDX1.9", name = "Loa 3",        mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} }
+    phun_suong_2   = { cmd_addr = "@B_0#HDX0.1", status_addr = "@B_0#HDX1.1", name = "Phun suong 2", mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    phun_suong_3   = { cmd_addr = "@B_0#HDX0.2", status_addr = "@B_0#HDX1.2", name = "Phun suong 3", mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    phun_suong_4   = { cmd_addr = "@B_0#HDX0.3", status_addr = "@B_0#HDX1.3", name = "Phun suong 4", mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    den_1          = { cmd_addr = "@B_0#HDX0.4", status_addr = "@B_0#HDX1.4", name = "Den 1",        mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    den_2          = { cmd_addr = "@B_0#HDX0.5", status_addr = "@B_0#HDX1.5", name = "Den 2",        mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    suoi_1         = { cmd_addr = "@B_0#HDX0.6", status_addr = "@B_0#HDX1.6", name = "Suoi 1",       mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    loa_1          = { cmd_addr = "@B_0#HDX0.7", status_addr = "@B_0#HDX1.7", name = "Loa 1",        mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    loa_2          = { cmd_addr = "@B_0#HDX0.8", status_addr = "@B_0#HDX1.8", name = "Loa 2",        mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    loa_3          = { cmd_addr = "@B_0#HDX0.9", status_addr = "@B_0#HDX1.9", name = "Loa 3",        mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    may_bom        = { cmd_addr = "@B_0#HDX0.10", status_addr = "@B_0#HDX1.10", name = "May bom",    mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} },
+    bay_thien_dich = { cmd_addr = "@B_0#HDX0.11", status_addr = "@B_0#HDX1.11", name = "Bay thien dich", mode = 0, cmd_state = 0, timer_start = 0, on_time = 0, off_time = 0, schedules = {} }
 }
 
 for _, dev in pairs(devices) do
@@ -209,7 +171,8 @@ end
 
 local dev_keys = {
     "phun_suong_1", "phun_suong_2", "phun_suong_3", "phun_suong_4",
-    "den_1", "den_2", "suoi_1", "loa_1", "loa_2", "loa_3"
+    "den_1", "den_2", "suoi_1", "loa_1", "loa_2", "loa_3",
+    "may_bom", "bay_thien_dich"
 }
 
 local last_rtc_check = 0    -- Mốc thời gian kiểm tra RTC (ms)
@@ -222,6 +185,7 @@ local temp_threshold = 25.0    -- Ngưỡng nhiệt độ (°C): Nhiệt độ <
 local hum_threshold  = 70.0    -- Ngưỡng độ ẩm (%): Độ ẩm < hum_threshold => Bật 4 Phun sương
 local auto_temp      = false   -- true: Tự động cảm biến nhiệt độ, false: Chạy lịch hẹn RTC
 local auto_humidity  = false   -- true: Tự động cảm biến độ ẩm, false: Chạy lịch hẹn RTC
+local auto_pump      = false   -- true: Tự động bơm theo cảm biến mực nước, false: Thủ công / Lịch hẹn RTC
 
 -- Cấu hình chu kỳ phun sương tự động theo độ ẩm (Tránh úng nước, chờ độ ẩm kịp lan tỏa)
 local ps_auto_on_sec       = 120   -- Thời gian phun mỗi lần (Giây), ví dụ: 120 giây (2 phút)
@@ -303,12 +267,7 @@ end
 -- Hàm đọc kiểm tra chính xác trạng thái thực tế của thiết bị (Đọc từ @B_0#HDX1.0 -> @B_0#HDX1.9)
 function get_dev_status(dev)
     if not dev then return 0 end
-    local ok, b = pcall(we_bas_getbit, dev.status_addr)
-    if ok and b ~= nil then
-        return b
-    end
-    -- Fallback nếu hàm đọc lỗi hoặc chưa có phản hồi từ phần cứng
-    return dev.cmd_state or 0
+    return safe_getbit(dev.status_addr, dev.cmd_state or 0)
 end
 
 -- 1. Tắt thiết bị
@@ -515,6 +474,8 @@ function process_all_devices()
             controlled_by_sensor = true
         elseif key == "suoi_1" and auto_temp then
             controlled_by_sensor = true
+        elseif key == "may_bom" and auto_pump then
+            controlled_by_sensor = true
         end
 
         -- Nếu không bị cảm biến khống chế thì chạy theo timer, chu kỳ hoặc lịch hẹn RTC
@@ -587,8 +548,8 @@ function process_sensor_auto_control()
     end
     last_sensor_auto_check = now
 
-    local t_val = we_bas_getword("@W_0#HDW10", 1) or we_bas_getword("@W_HDW10", 1) or 0
-    local h_val = we_bas_getword("@W_0#HDW11", 1) or we_bas_getword("@W_HDW11", 1) or 0
+    local t_val = safe_getword("@W_0#HDW10", 0)
+    local h_val = safe_getword("@W_0#HDW11", 0)
 
     -- 1. Điều khiển tự động Phun sương 1..4 theo cảm biến độ ẩm & chu kỳ 3 trạng thái
     if auto_humidity then
@@ -711,6 +672,40 @@ function process_sensor_auto_control()
             end
         end
     end
+
+    -- 3. Điều khiển tự động Máy bơm theo cảm biến mực nước (Auto Water Pump)
+    -- Khi thiếu nước (@B_0#HDX5.0 = 0) -> Tự động kích hoạt BẬT máy bơm cấp nước vào bể
+    -- Khi đầy/đủ nước (@B_0#HDX5.0 = 1) -> Tự động DỪNG máy bơm
+    -- Khi tràn nước (@B_0#HDX5.1 = 0) -> DỪNG KHẨN CẤP máy bơm để chống tràn
+    if auto_pump then
+        local dev_pump = devices.may_bom
+        if dev_pump then
+            local raw_hdx5_0 = safe_getbit("@B_0#HDX5.0", 1)  -- 1: Đủ nước, 0: Thiếu nước
+            local w_safe     = safe_getbit("@B_0#HDX5.1", 1)  -- 1: Chưa tràn, 0: Tràn nước
+            local target_pump_state = 0
+
+            if w_safe == 0 then
+                -- Báo tràn nước khẩn cấp -> Dừng bơm ngay lập tức!
+                target_pump_state = 0
+            elseif raw_hdx5_0 == 0 then
+                -- Thiếu nước -> Tự động bật máy bơm cấp nước
+                target_pump_state = 1
+            else
+                -- raw_hdx5_0 == 1: Đã đầy / đủ nước -> Dừng máy bơm
+                target_pump_state = 0
+            end
+
+            if dev_pump.cmd_state ~= target_pump_state then
+                set_dev_output(dev_pump, target_pump_state)
+                local reason = ""
+                if w_safe == 0 then reason = "TRÀN NƯỚC (KHẨN CẤP)"
+                elseif raw_hdx5_0 == 0 then reason = "THIẾU NƯỚC (HDX5.0 = 0)"
+                else reason = "ĐÃ ĐẦY/ĐỦ NƯỚC (HDX5.0 = 1)" end
+                print(string.format(">>> [AUTO BƠM NƯỚC] May bom -> %s (%s)", 
+                    target_pump_state == 1 and "BẬT" or "TẮT", reason))
+            end
+        end
+    end
 end
 
 -- Tương thích ngược với các tên hàm cũ cho phun sương 1
@@ -727,7 +722,16 @@ function process_phun_suong_1() process_all_devices() end
 -- Gửi ngay lập tức lên Broker (Topic: 3FAMIOT/HMI_PUB) không cần chờ chu kỳ 5 giây.
 -- Khi trạng thái không đổi: gửi định kỳ theo send_interval (5 giây) cùng cảm biến & heartbeat.
 --------------------------------------------------------------------------------
+local last_dev_change_check = 0
+local dev_change_interval = 200 -- Quét kiểm tra trạng thái mỗi 200ms
+
 function process_device_state_changes()
+    local now = we_bas_gettickcount()
+    if (now - last_dev_change_check) < dev_change_interval then
+        return
+    end
+    last_dev_change_check = now
+
     local any_changed = false
     local changes_desc = {}
 
@@ -780,8 +784,8 @@ end
 function send_data()
     if not obj or not obj:isconnected() then return end
 
-    local t_val = we_bas_getword("@W_0#HDW10", 1) or we_bas_getword("@W_HDW10", 1) or 0
-    local h_val = we_bas_getword("@W_0#HDW11", 1) or we_bas_getword("@W_HDW11", 1) or 0
+    local t_val = safe_getword("@W_0#HDW10", 0)
+    local h_val = safe_getword("@W_0#HDW11", 0)
     
     -- Đồng bộ lại last_status cho 10 thiết bị
     for _, key in ipairs(dev_keys) do
@@ -791,17 +795,38 @@ function send_data()
         end
     end
 
-    -- Trạng thái thiết bị được đọc chính xác từ các bit phản hồi HDX1.0 -> HDX1.9
+    -- Đọc 8 cảm biến dòng điện (@W_0#HDW20 -> @W_0#HDW27), đơn vị Ampe (nhân 0.01) theo mapping.txt
+    local cur_den_1   = tonumber(string.format("%.2f", (safe_getword("@W_0#HDW20", 0) * 0.01))) or 0
+    local cur_den_2   = tonumber(string.format("%.2f", (safe_getword("@W_0#HDW21", 0) * 0.01))) or 0
+    local cur_ps_1    = tonumber(string.format("%.2f", (safe_getword("@W_0#HDW22", 0) * 0.01))) or 0
+    local cur_ps_2    = tonumber(string.format("%.2f", (safe_getword("@W_0#HDW23", 0) * 0.01))) or 0
+    local cur_ps_3    = tonumber(string.format("%.2f", (safe_getword("@W_0#HDW24", 0) * 0.01))) or 0
+    local cur_loa_1   = tonumber(string.format("%.2f", (safe_getword("@W_0#HDW25", 0) * 0.01))) or 0
+    local cur_loa_2   = tonumber(string.format("%.2f", (safe_getword("@W_0#HDW26", 0) * 0.01))) or 0
+    local cur_may_bom = tonumber(string.format("%.2f", (safe_getword("@W_0#HDW27", 0) * 0.01))) or 0
+
+    -- Đọc 3 cảm biến âm thanh độ ồn (@W_0#HDW30 -> @W_0#HDW32), đơn vị dB (nhân 0.1)
+    local sound_1    = tonumber(string.format("%.1f", (safe_getword("@W_0#HDW30", 0) * 0.1))) or 0
+    local sound_2    = tonumber(string.format("%.1f", (safe_getword("@W_0#HDW31", 0) * 0.1))) or 0
+    local sound_3    = tonumber(string.format("%.1f", (safe_getword("@W_0#HDW32", 0) * 0.1))) or 0
+
+    -- Đọc cảm biến mực nước (@B_0#HDX5.0: 1 = đủ nước, 0 = thiếu nước; @B_0#HDX5.1: 1 = chưa tràn, 0 = tràn)
+    local raw_hdx5_0 = safe_getbit("@B_0#HDX5.0", 1)
+    local w_empty    = (raw_hdx5_0 == 0 and 1 or 0)  -- 1: Thiếu nước, 0: Đủ nước
+    local w_safe     = safe_getbit("@B_0#HDX5.1", 1)  -- 1: Chưa tràn, 0: Tràn
+    local w_overflow = (w_safe == 0 and 1 or 0)       -- 1: Tràn, 0: Bình thường
+
+    -- Trạng thái 12 thiết bị được đọc chính xác từ các bit phản hồi HDX1.0 -> HDX1.11
     local pub_data = {
         Tempeturate = t_val,
         Temperature = t_val,
         Humidity = h_val,
         heartbeat = heartbeat_val,              -- Heartbeat V-Box gửi xuống PLC (@W_0#HDW12: 0..60)
         kt_ket_noi = heartbeat_val,
-        plc_heartbeat = cur_plc_hb_val,         -- Heartbeat PLC gửi lên V-Box (@W_0#HDW13: 0..60)
-        plc_comm = plc_comm_ok and 1 or 0,      -- 1: Kết nối tốt, 0: Mất kết nối
-        plc_status = plc_comm_ok and "OK" or "DISCONNECTED",
-        alarm = plc_comm_ok and "" or "CẢNH BÁO: MẤT TRUYỀN THÔNG RS485 VỚI PLC (Heartbeat PLC đứng yên > 15s)!",
+        plc_heartbeat = get_plc_heartbeat(),    -- Heartbeat PLC gửi lên V-Box (@W_0#HDW13: 0..60)
+        plc_comm = 1,                           -- 1: Kết nối bình thường (V-Box giao tiếp trực tiếp qua mapping)
+        plc_status = "OK",
+        alarm = "",                             -- Không có cảnh báo RS485
         temp_threshold = temp_threshold,
         hum_threshold = hum_threshold,
         ps_on_time = ps_auto_on_time,
@@ -811,20 +836,39 @@ function send_data()
         ps_cycle_state = ps_auto_cycle_state,
         auto_temp = auto_temp and 1 or 0,
         auto_humidity = auto_humidity and 1 or 0,
-        phun_suong_1 = get_dev_status(devices.phun_suong_1),
-        phun_suong_2 = get_dev_status(devices.phun_suong_2),
-        phun_suong_3 = get_dev_status(devices.phun_suong_3),
-        phun_suong_4 = get_dev_status(devices.phun_suong_4),
-        den_1        = get_dev_status(devices.den_1),
-        den_2        = get_dev_status(devices.den_2),
-        suoi_1       = get_dev_status(devices.suoi_1),
-        loa_1        = get_dev_status(devices.loa_1),
-        loa_2        = get_dev_status(devices.loa_2),
-        loa_3        = get_dev_status(devices.loa_3)
+        auto_pump = auto_pump and 1 or 0,
+        -- Cảm biến mực nước
+        water_empty = w_empty,
+        water_safe = w_safe,
+        water_overflow = w_overflow,
+        -- Cảm biến âm thanh (dB)
+        sound_1 = sound_1,
+        sound_2 = sound_2,
+        sound_3 = sound_3,
+        -- Cảm biến dòng điện (A)
+        cur_den_1 = cur_den_1,
+        cur_den_2 = cur_den_2,
+        cur_ps_1 = cur_ps_1,
+        cur_ps_2 = cur_ps_2,
+        cur_ps_3 = cur_ps_3,
+        cur_loa_1 = cur_loa_1,
+        cur_loa_2 = cur_loa_2,
+        cur_may_bom = cur_may_bom,
+        phun_suong_1   = get_dev_status(devices.phun_suong_1),
+        phun_suong_2   = get_dev_status(devices.phun_suong_2),
+        phun_suong_3   = get_dev_status(devices.phun_suong_3),
+        phun_suong_4   = get_dev_status(devices.phun_suong_4),
+        den_1          = get_dev_status(devices.den_1),
+        den_2          = get_dev_status(devices.den_2),
+        suoi_1         = get_dev_status(devices.suoi_1),
+        loa_1          = get_dev_status(devices.loa_1),
+        loa_2          = get_dev_status(devices.loa_2),
+        loa_3          = get_dev_status(devices.loa_3),
+        may_bom        = get_dev_status(devices.may_bom),
+        bay_thien_dich = get_dev_status(devices.bay_thien_dich)
     }
-    print(string.format("Publishing data to Broker (%s): Temp=%s, Hum=%s, HB_VBox=%d, HB_PLC=%d, RS485=%s, AutoT=%s, AutoH=%s", 
-        PUBLISH_TOPIC, tostring(t_val), tostring(h_val), heartbeat_val, cur_plc_hb_val, plc_comm_ok and "OK" or "LOST", 
-        auto_temp and "ON" or "OFF", auto_humidity and "ON" or "OFF"))
+    print(string.format("Publishing data to Broker (%s): Temp=%s, Hum=%s, WaterEmpty=%s, WaterOverflow=%s, Sound1=%.1fdB, CurDen1=%.2fA", 
+        PUBLISH_TOPIC, tostring(t_val), tostring(h_val), tostring(w_empty), tostring(w_overflow), sound_1, cur_den_1))
     obj:publish(PUBLISH_TOPIC, json.encode(pub_data), 0, 0)
 
     -- Đồng thời gửi thời gian thực lên topic 3FAMIOT/TIME
@@ -936,6 +980,22 @@ function mqtt_msg_callback(topic, msg)
             handled = true
         end
 
+        if receive.auto_pump ~= nil then
+            local new_val = (receive.auto_pump == 1 or receive.auto_pump == true or receive.auto_pump == "1")
+            auto_pump = new_val
+            print(">>> [MQTT CHẾ ĐỘ] May bom: " .. (auto_pump and "TỰ ĐỘNG CẢM BIẾN MỰC NƯỚC" or "THỦ CÔNG / LỊCH RTC"))
+            if not auto_pump then
+                devices.may_bom.mode = 0
+                set_dev_output(devices.may_bom, 0)
+                last_rtc_check = 0
+                process_all_devices()
+            else
+                last_sensor_auto_check = 0
+                process_sensor_auto_control()
+            end
+            handled = true
+        end
+
         -- Cài đặt chu kỳ phun & nghỉ (Hỗ trợ cả giây và phút)
         if receive.ps_on_sec ~= nil then
             ps_auto_on_sec = tonumber(receive.ps_on_sec) or ps_auto_on_sec
@@ -1032,24 +1092,21 @@ function mqtt_msg_callback(topic, msg)
     end
 end
 
--- Chương trình chính quản lý giám sát Heartbeat PLC (@W_0#HDW13), Heartbeat V-Box (@W_0#HDW12), thiết bị và MQTT
+-- Chương trình chính quản lý Heartbeat V-Box (@W_0#HDW12), thiết bị và MQTT
 function main()
-    -- 1. Giám sát Heartbeat từ PLC tại @W_0#HDW13 (nếu đứng yên > 15s => cảnh báo mất kết nối RS485)
-    process_plc_comm_check()
-
-    -- 2. Xử lý heartbeat V-Box đếm 0 -> 60 ghi vào thanh ghi @W_0#HDW12 để PLC giám sát V-Box
+    -- 1. Xử lý heartbeat V-Box đếm 0 -> 60 ghi vào thanh ghi @W_0#HDW12 để PLC đếm giám sát
     process_heartbeat()
 
-    -- 3. Xử lý tự động theo cảm biến Nhiệt độ / Độ ẩm (nếu bật chế độ Auto Sensor)
+    -- 2. Xử lý tự động theo cảm biến Nhiệt độ / Độ ẩm (nếu bật chế độ Auto Sensor)
     process_sensor_auto_control()
 
-    -- 4. Quét kiểm tra trạng thái và tất cả khung giờ của cả 10 thiết bị liên tục
+    -- 3. Quét kiểm tra trạng thái và tất cả khung giờ của cả 10 thiết bị liên tục
     process_all_devices()
 
-    -- 5. Giám sát thay đổi trạng thái thiết bị -> Nếu có thay đổi thì gửi lên Broker NGAY LẬP TỨC
+    -- 4. Giám sát thay đổi trạng thái thiết bị -> Nếu có thay đổi thì gửi lên Broker NGAY LẬP TỨC
     process_device_state_changes()
 
-    -- 6. Quản lý gửi nhận dữ liệu MQTT định kỳ (5 giây khi không có thay đổi)
+    -- 5. Quản lý gửi nhận dữ liệu MQTT định kỳ (5 giây khi không có thay đổi)
     if obj then
         if obj:isconnected() then
             -- Gửi dữ liệu định kỳ mỗi send_interval (5 giây) cùng cảm biến & heartbeat

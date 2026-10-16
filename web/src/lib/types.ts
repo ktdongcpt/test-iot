@@ -8,12 +8,14 @@ export type DeviceKey =
   | 'suoi_1'
   | 'loa_1'
   | 'loa_2'
-  | 'loa_3';
+  | 'loa_3'
+  | 'may_bom'
+  | 'bay_thien_dich';
 
 export interface DeviceConfig {
   key: DeviceKey;
   name: string;
-  category: 'mist' | 'light' | 'heater' | 'speaker';
+  category: 'mist' | 'light' | 'heater' | 'speaker' | 'pump' | 'trap';
   cmdAddr: string;
   statusAddr: string;
   maxSlots: number; // 24 for mist, 10 for others
@@ -31,6 +33,8 @@ export const DEVICE_DEFINITIONS: DeviceConfig[] = [
   { key: 'loa_1',        name: 'Loa 1',        category: 'speaker', cmdAddr: '@B_0#HDX0.7', statusAddr: '@B_0#HDX1.7', maxSlots: 10, iconName: 'Volume2' },
   { key: 'loa_2',        name: 'Loa 2',        category: 'speaker', cmdAddr: '@B_0#HDX0.8', statusAddr: '@B_0#HDX1.8', maxSlots: 10, iconName: 'Volume2' },
   { key: 'loa_3',        name: 'Loa 3',        category: 'speaker', cmdAddr: '@B_0#HDX0.9', statusAddr: '@B_0#HDX1.9', maxSlots: 10, iconName: 'Volume2' },
+  { key: 'may_bom',      name: 'Máy bơm',      category: 'pump',    cmdAddr: '@B_0#HDX0.10', statusAddr: '@B_0#HDX1.10', maxSlots: 10, iconName: 'Waves' },
+  { key: 'bay_thien_dich', name: 'Bẫy thiên địch', category: 'trap', cmdAddr: '@B_0#HDX0.11', statusAddr: '@B_0#HDX1.11', maxSlots: 10, iconName: 'Bug' },
 ];
 
 export interface ScheduleSlot {
@@ -43,6 +47,7 @@ export interface ScheduleSlot {
   day?: number;
   month?: number;
   year?: number;
+  dateStr?: string; // "YYYY-MM-DD"
   enable?: boolean;
 }
 
@@ -52,6 +57,9 @@ export interface TelemetryState {
   vboxHeartbeat: number;
   plcHeartbeat: number;
   heartbeatAlive: boolean;
+  vboxCommOk: boolean;
+  vboxAlarmMsg: string;
+  lastVboxSeenAt: number;
   plcCommOk: boolean;
   plcAlarmMsg: string;
   tempThreshold: number;
@@ -63,6 +71,25 @@ export interface TelemetryState {
   psCycleState: number; // 0: IDLE, 1: SPRAYING, 2: RESTING
   autoTempMode: boolean;
   autoHumidityMode: boolean;
+  autoPumpMode: boolean;
+  waterEmpty: number;    // 1: Thiếu nước, 0: Đủ nước
+  waterSafe: number;     // 1: Chưa tràn, 0: Tràn
+  waterOverflow: number; // 1: Đang tràn, 0: Chưa tràn
+  sound: {
+    s1: number;
+    s2: number;
+    s3: number;
+  };
+  current: {
+    den_1: number;
+    den_2: number;
+    phun_suong_1: number;
+    phun_suong_2: number;
+    phun_suong_3: number;
+    loa_1: number;
+    loa_2: number;
+    may_bom: number;
+  };
   vboxTime: string;
   vboxDate: string;
   devices: Record<DeviceKey, boolean>;

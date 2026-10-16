@@ -21,6 +21,8 @@ class MqttService {
   private scheduleCallbacks: ((device: string, schedules: ScheduleSlot[]) => void)[] = [];
   private connectionCallbacks: ((connected: boolean) => void)[] = [];
   private logCallbacks: ((log: { direction: 'IN' | 'OUT' | 'SYS'; topic?: string; payload: string; time: string }) => void)[] = [];
+  private watchdogInterval: any = null;
+  private connectTime: number = 0;
 
   // State cache
   public state: TelemetryState = {
@@ -29,6 +31,9 @@ class MqttService {
     vboxHeartbeat: 0,
     plcHeartbeat: 0,
     heartbeatAlive: false,
+    vboxCommOk: true,
+    vboxAlarmMsg: '',
+    lastVboxSeenAt: 0,
     plcCommOk: true,
     plcAlarmMsg: '',
     tempThreshold: 25.0,
@@ -40,6 +45,25 @@ class MqttService {
     psCycleState: 0,
     autoTempMode: false,
     autoHumidityMode: false,
+    autoPumpMode: false,
+    waterEmpty: 0,
+    waterSafe: 1,
+    waterOverflow: 0,
+    sound: {
+      s1: 0,
+      s2: 0,
+      s3: 0,
+    },
+    current: {
+      den_1: 0,
+      den_2: 0,
+      phun_suong_1: 0,
+      phun_suong_2: 0,
+      phun_suong_3: 0,
+      loa_1: 0,
+      loa_2: 0,
+      may_bom: 0,
+    },
     vboxTime: '--:--:--',
     vboxDate: '--/--/----',
     devices: {
@@ -53,6 +77,8 @@ class MqttService {
       loa_1: false,
       loa_2: false,
       loa_3: false,
+      may_bom: false,
+      bay_thien_dich: false,
     },
     mqttConnected: false,
     lastReceived: 'Chưa có dữ liệu từ V-Box...',
@@ -82,6 +108,8 @@ class MqttService {
       this.client.on('connect', () => {
         this.isConnecting = false;
         this.state.mqttConnected = true;
+        this.connectTime = Date.now();
+        this.startWatchdog();
         this.emitConnection(true);
         this.emitLog('SYS', `Đã kết nối MQTT Broker thành công! ClientID: ${clientId}`);
 
@@ -116,10 +144,53 @@ class MqttService {
     }
   }
 
+  private startWatchdog() {
+    if (this.watchdogInterval) return;
+    this.watchdogInterval = setInterval(() => {
+      this.checkVboxLiveness();
+    }, 1000);
+  }
+
+  private checkVboxLiveness() {
+    if (!this.state.mqttConnected) return;
+    const now = Date.now();
+
+    if (this.state.lastVboxSeenAt > 0) {
+      const elapsed = now - this.state.lastVboxSeenAt;
+      if (elapsed > 15000) {
+        if (this.state.vboxCommOk) {
+          this.state.vboxCommOk = false;
+          this.state.heartbeatAlive = false;
+          this.state.vboxAlarmMsg = `MẤT TÍN HIỆU TỪ V-BOX GATEWAY (${Math.round(elapsed / 1000)}s)! V-Box có thể bị mất điện hoặc mất mạng Internet/Wi-Fi.`;
+          this.emitTelemetry();
+          this.emitLog('SYS', `[CẢNH BÁO] ${this.state.vboxAlarmMsg}`);
+        }
+      }
+    } else if (this.connectTime > 0 && now - this.connectTime > 15000) {
+      if (this.state.vboxCommOk) {
+        this.state.vboxCommOk = false;
+        this.state.heartbeatAlive = false;
+        this.state.vboxAlarmMsg = 'CHƯA NHẬN ĐƯỢC TÍN HIỆU TỪ V-BOX (>15s)! V-Box Gateway hiện đang Offline.';
+        this.emitTelemetry();
+        this.emitLog('SYS', `[CẢNH BÁO] ${this.state.vboxAlarmMsg}`);
+      }
+    }
+  }
+
   private handleIncomingMessage(topic: string, msg: string) {
     this.emitLog('IN', msg, topic);
     this.state.lastReceived = msg;
-    this.state.lastReceivedAt = Date.now();
+    const now = Date.now();
+    this.state.lastReceivedAt = now;
+    this.state.lastVboxSeenAt = now;
+
+    if (!this.state.vboxCommOk) {
+      this.state.vboxCommOk = true;
+      this.state.heartbeatAlive = true;
+      this.state.vboxAlarmMsg = '';
+      this.emitLog('SYS', '[THÔNG BÁO] Đã nhận lại tín hiệu từ V-BOX Gateway!');
+      this.emitTelemetry();
+    }
 
     try {
       const data = JSON.parse(msg);
@@ -217,17 +288,68 @@ class MqttService {
         if (data.ps_cycle_state !== undefined) this.state.psCycleState = Number(data.ps_cycle_state);
         if (data.auto_temp !== undefined) this.state.autoTempMode = Number(data.auto_temp) === 1;
         if (data.auto_humidity !== undefined) this.state.autoHumidityMode = Number(data.auto_humidity) === 1;
+        if (data.auto_pump !== undefined) this.state.autoPumpMode = Number(data.auto_pump) === 1;
+        if (data.autoPumpMode !== undefined) this.state.autoPumpMode = Boolean(data.autoPumpMode);
 
-        // Trạng thái 10 thiết bị phản hồi
+        // Cảm biến mực nước (@B_0#HDX5.0 & @B_0#HDX5.1)
+        if (data.water_empty !== undefined) this.state.waterEmpty = Number(data.water_empty);
+        else if (data.waterEmpty !== undefined) this.state.waterEmpty = Number(data.waterEmpty);
+
+        if (data.water_safe !== undefined) this.state.waterSafe = Number(data.water_safe);
+        else if (data.waterSafe !== undefined) this.state.waterSafe = Number(data.waterSafe);
+
+        if (data.water_overflow !== undefined) this.state.waterOverflow = Number(data.water_overflow);
+        else if (data.waterOverflow !== undefined) this.state.waterOverflow = Number(data.waterOverflow);
+        else if (this.state.waterSafe === 0) this.state.waterOverflow = 1;
+
+        // Cảm biến độ ồn âm thanh (dB)
+        if (data.sound_1 !== undefined) this.state.sound.s1 = Number(data.sound_1);
+        if (data.sound_2 !== undefined) this.state.sound.s2 = Number(data.sound_2);
+        if (data.sound_3 !== undefined) this.state.sound.s3 = Number(data.sound_3);
+        if (data.sound) {
+          if (data.sound.s1 !== undefined) this.state.sound.s1 = Number(data.sound.s1);
+          if (data.sound.s2 !== undefined) this.state.sound.s2 = Number(data.sound.s2);
+          if (data.sound.s3 !== undefined) this.state.sound.s3 = Number(data.sound.s3);
+        }
+
+        // Cảm biến dòng điện 8 thiết bị (A)
+        if (data.cur_den_1 !== undefined) this.state.current.den_1 = Number(data.cur_den_1);
+        if (data.cur_den_2 !== undefined) this.state.current.den_2 = Number(data.cur_den_2);
+        if (data.cur_ps_1 !== undefined) this.state.current.phun_suong_1 = Number(data.cur_ps_1);
+        if (data.cur_ps_2 !== undefined) this.state.current.phun_suong_2 = Number(data.cur_ps_2);
+        if (data.cur_ps_3 !== undefined) this.state.current.phun_suong_3 = Number(data.cur_ps_3);
+        if (data.cur_loa_1 !== undefined) this.state.current.loa_1 = Number(data.cur_loa_1);
+        if (data.cur_loa_2 !== undefined) this.state.current.loa_2 = Number(data.cur_loa_2);
+        if (data.cur_may_bom !== undefined) this.state.current.may_bom = Number(data.cur_may_bom);
+        if (data.current) {
+          if (data.current.den_1 !== undefined) this.state.current.den_1 = Number(data.current.den_1);
+          if (data.current.den_2 !== undefined) this.state.current.den_2 = Number(data.current.den_2);
+          if (data.current.phun_suong_1 !== undefined) this.state.current.phun_suong_1 = Number(data.current.phun_suong_1);
+          if (data.current.phun_suong_2 !== undefined) this.state.current.phun_suong_2 = Number(data.current.phun_suong_2);
+          if (data.current.phun_suong_3 !== undefined) this.state.current.phun_suong_3 = Number(data.current.phun_suong_3);
+          if (data.current.loa_1 !== undefined) this.state.current.loa_1 = Number(data.current.loa_1);
+          if (data.current.loa_2 !== undefined) this.state.current.loa_2 = Number(data.current.loa_2);
+          if (data.current.may_bom !== undefined) this.state.current.may_bom = Number(data.current.may_bom);
+        }
+
+        // Trạng thái 12 thiết bị phản hồi
         const devKeys: DeviceKey[] = [
           'phun_suong_1', 'phun_suong_2', 'phun_suong_3', 'phun_suong_4',
           'den_1', 'den_2', 'suoi_1', 'loa_1', 'loa_2', 'loa_3',
+          'may_bom', 'bay_thien_dich'
         ];
         devKeys.forEach((k) => {
           if (data[k] !== undefined) {
             this.state.devices[k] = Number(data[k]) === 1;
           }
         });
+        if (data.devices) {
+          devKeys.forEach((k) => {
+            if (data.devices[k] !== undefined) {
+              this.state.devices[k] = Number(data.devices[k]) === 1;
+            }
+          });
+        }
 
         // Hỗ trợ alias cũ
         if (data.fan !== undefined && data.phun_suong_2 === undefined) this.state.devices.phun_suong_2 = Number(data.fan) === 1;
@@ -311,6 +433,7 @@ class MqttService {
   public updateAutoSettings(settings: {
     auto_temp?: boolean;
     auto_humidity?: boolean;
+    auto_pump?: boolean;
     temp_threshold?: number;
     hum_threshold?: number;
     ps_on_sec?: number;
@@ -319,6 +442,7 @@ class MqttService {
     const payload: any = {};
     if (settings.auto_temp !== undefined) payload.auto_temp = settings.auto_temp ? 1 : 0;
     if (settings.auto_humidity !== undefined) payload.auto_humidity = settings.auto_humidity ? 1 : 0;
+    if (settings.auto_pump !== undefined) payload.auto_pump = settings.auto_pump ? 1 : 0;
     if (settings.temp_threshold !== undefined) payload.temp_threshold = settings.temp_threshold;
     if (settings.hum_threshold !== undefined) payload.hum_threshold = settings.hum_threshold;
     if (settings.ps_on_sec !== undefined) payload.ps_on_sec = settings.ps_on_sec;

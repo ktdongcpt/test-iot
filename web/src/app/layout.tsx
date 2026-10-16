@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'V-BOX IoT Cloud SCADA • Điều Khiển 10 Thiết Bị & Giám Sát PLC RS485',
-  description: 'Hệ thống Web SCADA giám sát truyền thông RS485 PLC, cảm biến nhiệt độ - độ ẩm, và điều khiển 10 thiết bị V-Box theo thời gian thực.',
+  title: 'V-BOX IoT Cloud SCADA • Điều Khiển 12 Thiết Bị & Giám Sát PLC RS485',
+  description: 'Hệ thống Web SCADA giám sát truyền thông RS485 PLC, cảm biến nhiệt độ - độ ẩm, mực nước, âm thanh, dòng điện và điều khiển 12 thiết bị V-Box theo thời gian thực.',
 };
 
 export default function RootLayout({

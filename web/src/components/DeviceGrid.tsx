@@ -6,6 +6,9 @@ import {
   Lightbulb, 
   Flame, 
   Volume2, 
+  Waves,
+  Bug,
+  Zap,
   Calendar, 
   Clock, 
   Lock, 
@@ -19,6 +22,17 @@ interface DeviceGridProps {
   devicesState: Record<DeviceKey, boolean>;
   autoTempMode: boolean;
   autoHumidityMode: boolean;
+  autoPumpMode: boolean;
+  current?: {
+    den_1: number;
+    den_2: number;
+    phun_suong_1: number;
+    phun_suong_2: number;
+    phun_suong_3: number;
+    loa_1: number;
+    loa_2: number;
+    may_bom: number;
+  };
   onOpenSchedule: (device: DeviceConfig) => void;
 }
 
@@ -26,6 +40,8 @@ export const DeviceGrid: React.FC<DeviceGridProps> = ({
   devicesState,
   autoTempMode,
   autoHumidityMode,
+  autoPumpMode,
+  current,
   onOpenSchedule,
 }) => {
   const [timerModalDev, setTimerModalDev] = useState<DeviceConfig | null>(null);
@@ -44,6 +60,10 @@ export const DeviceGrid: React.FC<DeviceGridProps> = ({
         return <Flame className="w-5 h-5 text-orange-500" />;
       case 'speaker':
         return <Volume2 className="w-5 h-5 text-purple-500" />;
+      case 'pump':
+        return <Waves className="w-5 h-5 text-blue-500" />;
+      case 'trap':
+        return <Bug className="w-5 h-5 text-emerald-500" />;
       default:
         return <CloudRain className="w-5 h-5" />;
     }
@@ -56,12 +76,34 @@ export const DeviceGrid: React.FC<DeviceGridProps> = ({
     if (key === 'suoi_1') {
       return autoTempMode;
     }
+    if (key === 'may_bom') {
+      return autoPumpMode;
+    }
     return false;
+  };
+
+  const getCurrentForDevice = (key: DeviceKey): number | null => {
+    if (!current) return null;
+    switch (key) {
+      case 'den_1': return current.den_1;
+      case 'den_2': return current.den_2;
+      case 'phun_suong_1': return current.phun_suong_1;
+      case 'phun_suong_2': return current.phun_suong_2;
+      case 'phun_suong_3': return current.phun_suong_3;
+      case 'loa_1': return current.loa_1;
+      case 'loa_2': return current.loa_2;
+      case 'may_bom': return current.may_bom;
+      default: return null;
+    }
   };
 
   const handleToggle = (dev: DeviceConfig, nextState: boolean) => {
     if (isDeviceLocked(dev.key)) {
-      alert(`Thiết bị ${dev.name} đang ở chế độ TỰ ĐỘNG! Hãy gạt TẮT chế độ tự động ở bảng phía trên nếu muốn điều khiển thủ công.`);
+      if (dev.key === 'may_bom') {
+        alert('Máy bơm đang ở chế độ TỰ ĐỘNG THEO PHAO NƯỚC! Hãy gạt TẮT chế độ tự động ở bảng phía trên nếu muốn điều khiển thủ công.');
+      } else {
+        alert(`Thiết bị ${dev.name} đang ở chế độ TỰ ĐỘNG! Hãy gạt TẮT chế độ tự động ở bảng phía trên nếu muốn điều khiển thủ công.`);
+      }
       return;
     }
     mqttService.setDeviceState(dev.key, nextState);
@@ -82,10 +124,10 @@ export const DeviceGrid: React.FC<DeviceGridProps> = ({
       <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
         <div>
           <h2 className="text-base font-bold text-slate-800">
-            BẢNG ĐIỀU KHIỂN & PHẢN HỒI 10 THIẾT BỊ
+            BẢNG ĐIỀU KHIỂN & PHẢN HỒI 12 THIẾT BỊ
           </h2>
           <p className="text-xs text-slate-500">
-            Lệnh điều khiển ghi @B_0#HDX0.0 &rarr; HDX0.9 • Phản hồi thực tế đọc @B_0#HDX1.0 &rarr; HDX1.9
+            Lệnh điều khiển ghi @B_0#HDX0.0 &rarr; HDX0.11 • Phản hồi thực tế đọc @B_0#HDX1.0 &rarr; HDX1.11
           </p>
         </div>
       </div>
@@ -94,6 +136,7 @@ export const DeviceGrid: React.FC<DeviceGridProps> = ({
         {DEVICE_DEFINITIONS.map((dev) => {
           const isRunning = Boolean(devicesState[dev.key]);
           const locked = isDeviceLocked(dev.key);
+          const curVal = getCurrentForDevice(dev.key);
 
           return (
             <div
@@ -131,7 +174,7 @@ export const DeviceGrid: React.FC<DeviceGridProps> = ({
                 </div>
 
                 {/* Status Badges */}
-                <div className="flex items-center gap-2 my-2">
+                <div className="flex flex-wrap items-center gap-1.5 my-2">
                   <span
                     className={`text-xs px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
                       isRunning
@@ -146,6 +189,13 @@ export const DeviceGrid: React.FC<DeviceGridProps> = ({
                     <span className="text-[11px] px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold flex items-center gap-1">
                       <Lock className="w-3 h-3" />
                       Tự động
+                    </span>
+                  )}
+
+                  {curVal !== null && (
+                    <span className="text-[11px] px-2 py-0.5 rounded bg-amber-50 text-amber-700 font-mono font-bold border border-amber-200 flex items-center gap-0.5" title={`Dòng điện: ${curVal.toFixed(2)} A`}>
+                      <Zap className="w-3 h-3 text-amber-500" />
+                      {curVal.toFixed(2)}A
                     </span>
                   )}
                 </div>

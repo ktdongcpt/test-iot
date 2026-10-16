@@ -103,6 +103,7 @@ int   psAutoOffSec       = 900;    // Khoảng thời gian nghỉ giữa các l�
 int   psCycleState       = 0;      // 0: Chờ/Đủ ẩm, 1: Đang phun, 2: Đang nghỉ lan tỏa (Khóa bơm)
 bool autoTempMode        = false;  // true: Tự động theo cảm biến nhiệt độ, false: Lịch hẹn RTC
 bool autoHumidityMode    = false;  // true: Tự động theo cảm biến độ ẩm, false: Lịch hẹn RTC
+bool autoPumpMode        = false;  // true: Tự động theo cảm biến mực nước, false: Thủ công / Lịch hẹn RTC
 
 String lastMqttReceived  = "Đang chờ dữ liệu từ V-Box...";
 String lastMqttPublished = "Chưa gửi lệnh";
@@ -111,17 +112,39 @@ unsigned long lastVboxSchedulesTime = 0;
 unsigned long lastMqttMsgTime = 0;
 unsigned long lastReconnectAttempt = 0;
 
-// Trạng thái phản hồi thực tế của 10 thiết bị (Đọc từ @B_0#HDX1.0 -> @B_0#HDX1.9)
-bool statePhunSuong1 = false; // Phản hồi @B_0#HDX1.0
-bool statePhunSuong2 = false; // Phản hồi @B_0#HDX1.1
-bool statePhunSuong3 = false; // Phản hồi @B_0#HDX1.2
-bool statePhunSuong4 = false; // Phản hồi @B_0#HDX1.3
-bool stateDen1       = false; // Phản hồi @B_0#HDX1.4
-bool stateDen2       = false; // Phản hồi @B_0#HDX1.5
-bool stateSuoi1      = false; // Phản hồi @B_0#HDX1.6
-bool stateLoa1       = false; // Phản hồi @B_0#HDX1.7
-bool stateLoa2       = false; // Phản hồi @B_0#HDX1.8
-bool stateLoa3       = false; // Phản hồi @B_0#HDX1.9
+// Trạng thái phản hồi thực tế của 12 thiết bị (Đọc từ @B_0#HDX1.0 -> @B_0#HDX1.11)
+bool statePhunSuong1   = false; // Phản hồi @B_0#HDX1.0
+bool statePhunSuong2   = false; // Phản hồi @B_0#HDX1.1
+bool statePhunSuong3   = false; // Phản hồi @B_0#HDX1.2
+bool statePhunSuong4   = false; // Phản hồi @B_0#HDX1.3
+bool stateDen1         = false; // Phản hồi @B_0#HDX1.4
+bool stateDen2         = false; // Phản hồi @B_0#HDX1.5
+bool stateSuoi1        = false; // Phản hồi @B_0#HDX1.6
+bool stateLoa1         = false; // Phản hồi @B_0#HDX1.7
+bool stateLoa2         = false; // Phản hồi @B_0#HDX1.8
+bool stateLoa3         = false; // Phản hồi @B_0#HDX1.9
+bool stateMayBom       = false; // Phản hồi @B_0#HDX1.10
+bool stateBayThienDich = false; // Phản hồi @B_0#HDX1.11
+
+// Cảm biến mực nước (@B_0#HDX5.0: 1 = Đủ nước, 0 = Thiếu nước; @B_0#HDX5.1: 1 = Chưa tràn, 0 = Tràn)
+int waterEmpty = 0;    // 1: Thiếu nước, 0: Đủ nước
+int waterSafe = 1;     // 1: Chưa tràn, 0: Tràn
+int waterOverflow = 0; // 1: Đang tràn, 0: Bình thường
+
+// Cảm biến âm thanh (Độ ồn dB, hệ số 0.1)
+float sound1 = 0.0;
+float sound2 = 0.0;
+float sound3 = 0.0;
+
+// Cảm biến dòng điện (A, hệ số 0.01 theo mapping.txt)
+float curDen1   = 0.0; // HDW20: Dòng điện đèn 1
+float curDen2   = 0.0; // HDW21: Dòng điện đèn 2
+float curPs1    = 0.0; // HDW22: Dòng điện phun sương 1
+float curPs2    = 0.0; // HDW23: Dòng điện phun sương 2
+float curPs3    = 0.0; // HDW24: Dòng điện phun sương 3
+float curLoa1   = 0.0; // HDW25: Dòng điện loa 1
+float curLoa2   = 0.0; // HDW26: Dòng điện loa 2
+float curMayBom = 0.0; // HDW27: Dòng điện máy bơm
 
 // ==============================================================================
 // 5. GIAO DIỆN WEB (HTML, CSS, JS HIỆN ĐẠI CÓ BANNER CẢNH BÁO MẤT RS485 & 2 HEARTBEAT)
@@ -132,7 +155,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>V-BOX ESP32 • Giám Sát RS485 PLC & Điều Khiển 10 Thiết Bị</title>
+  <title>V-BOX ESP32 • Giám Sát Cảm Biến & Điều Khiển 12 Thiết Bị</title>
   <style>
     :root {
       --bg: #f8fafc;
@@ -411,7 +434,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
   <div class="header">
     <h1>V-BOX ESP32 GATEWAY</h1>
-    <p>Thu Thập Cảm Biến • Giám Sát Heartbeat Kép • Điều Khiển & Phản Hồi 10 Thiết Bị</p>
+    <p>Thu Thập Cảm Biến • Giám Sát Heartbeat Kép • Điều Khiển & Phản Hồi 12 Thiết Bị</p>
     <div class="badges">
       <span class="badge badge-ok" id="badge-mqtt">MQTT: Đang kết nối...</span>
       <span class="badge badge-ok" id="badge-plc">PLC RS485: Đang kiểm tra...</span>
@@ -441,6 +464,88 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       <div class="sensor-display">
         <span class="sensor-val val-hum" id="hum-val">--</span>
         <span class="sensor-unit">%</span>
+      </div>
+    </div>
+
+    <!-- Thẻ Mực Nước Bể Chứa -->
+    <div class="card">
+      <div class="card-title">
+        <span>🌊</span> MỰC NƯỚC (HDX5.0 • HDX5.1)
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; background: #f8fafc; border-radius: 8px; border: 1px solid var(--border);">
+          <span style="font-size: 0.82rem; font-weight: 500; color: var(--text);">Mực nước (HDX5.0):</span>
+          <span class="badge badge-ok" id="badge-water-empty" style="font-size: 0.78rem; font-weight: 700;">ĐỦ NƯỚC</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; background: #f8fafc; border-radius: 8px; border: 1px solid var(--border);">
+          <span style="font-size: 0.82rem; font-weight: 500; color: var(--text);">Tràn nước (HDX5.1):</span>
+          <span class="badge badge-ok" id="badge-water-overflow" style="font-size: 0.78rem; font-weight: 700;">CHƯA TRÀN</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Thẻ Cảm Biến Âm Thanh (Độ Ồn dB) -->
+    <div class="card">
+      <div class="card-title">
+        <span>📢</span> ĐỘ ỒN ÂM THANH (dB • &times;0.1)
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 6px; text-align: center;">
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 4px;">
+          <div style="font-size: 0.72rem; color: var(--muted); font-weight: 600;">Âm thanh 1</div>
+          <div style="font-size: 1.12rem; font-weight: 700; color: #0284c7; margin-top: 2px;"><span id="val-sound-1">--</span> <span style="font-size: 0.7rem; font-weight: 500;">dB</span></div>
+          <div style="font-size: 0.68rem; color: var(--muted);">@W_0#HDW30</div>
+        </div>
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 4px;">
+          <div style="font-size: 0.72rem; color: var(--muted); font-weight: 600;">Âm thanh 2</div>
+          <div style="font-size: 1.12rem; font-weight: 700; color: #0284c7; margin-top: 2px;"><span id="val-sound-2">--</span> <span style="font-size: 0.7rem; font-weight: 500;">dB</span></div>
+          <div style="font-size: 0.68rem; color: var(--muted);">@W_0#HDW31</div>
+        </div>
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 4px;">
+          <div style="font-size: 0.72rem; color: var(--muted); font-weight: 600;">Âm thanh 3</div>
+          <div style="font-size: 1.12rem; font-weight: 700; color: #0284c7; margin-top: 2px;"><span id="val-sound-3">--</span> <span style="font-size: 0.7rem; font-weight: 500;">dB</span></div>
+          <div style="font-size: 0.68rem; color: var(--muted);">@W_0#HDW32</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Thẻ Giám Sát Dòng Điện 8 Thiết Bị -->
+    <div class="card" style="grid-column: 1 / -1;">
+      <div class="card-title">
+        <span>⚡</span> GIÁM SÁT DÒNG ĐIỆN 8 THIẾT BỊ (@W_0#HDW20 &rarr; HDW27 • ĐƠN VỊ AMPE &times;0.01)
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 10px; margin-top: 6px;">
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;">
+          <div style="font-size: 0.74rem; color: var(--muted); font-weight: 600;">Đèn 1 (HDW20)</div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-den_1">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
+        </div>
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;">
+          <div style="font-size: 0.74rem; color: var(--muted); font-weight: 600;">Đèn 2 (HDW21)</div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-den_2">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
+        </div>
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;">
+          <div style="font-size: 0.74rem; color: var(--muted); font-weight: 600;">Phun sương 1 (HDW22)</div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-phun_suong_1">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
+        </div>
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;">
+          <div style="font-size: 0.74rem; color: var(--muted); font-weight: 600;">Phun sương 2 (HDW23)</div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-phun_suong_2">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
+        </div>
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;">
+          <div style="font-size: 0.74rem; color: var(--muted); font-weight: 600;">Phun sương 3 (HDW24)</div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-phun_suong_3">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
+        </div>
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;">
+          <div style="font-size: 0.74rem; color: var(--muted); font-weight: 600;">Loa 1 (HDW25)</div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-loa_1">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
+        </div>
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;">
+          <div style="font-size: 0.74rem; color: var(--muted); font-weight: 600;">Loa 2 (HDW26)</div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-loa_2">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
+        </div>
+        <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;">
+          <div style="font-size: 0.74rem; color: var(--muted); font-weight: 600;">Máy bơm (HDW27)</div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-may_bom">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
+        </div>
       </div>
     </div>
 
@@ -550,16 +655,58 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           </div>
         </div>
 
+        <!-- Cột 3: Tự động Bơm Nước theo Mực Nước Bể Chứa -->
+        <div style="background: #ffffff; border: 1px solid var(--border); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between;">
+          <div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.25rem;">🌊</span>
+                <strong style="font-size: 0.95rem; color: var(--text);">Máy Bơm Nước</strong>
+              </div>
+              <label class="switch" title="Gạt BẬT: Tự động bơm theo mực nước bể | Gạt TẮT: Điều khiển thủ công / Lịch RTC">
+                <input type="checkbox" id="sw-auto-pump" onchange="toggleAutoMode('pump', this.checked)">
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div style="margin-bottom: 12px;">
+              <span class="badge" id="badge-mode-pump" style="font-size: 0.72rem;">Đang tải chế độ...</span>
+            </div>
+          </div>
+
+          <div>
+            <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 0.8rem; color: var(--text);">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span style="color: var(--muted);">Thiếu nước (HDX5.0 = 0):</span>
+                <strong style="color: #10b981;">Tự kích BẬT bơm</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span style="color: var(--muted);">Đủ nước (HDX5.0 = 1):</span>
+                <strong style="color: #ef4444;">Tự kích DỪNG bơm</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span style="color: var(--muted);">Tràn nước (HDX5.1 = 0):</span>
+                <strong style="color: #ef4444;">KHÓA DỪNG KHẨN CẤP</strong>
+              </div>
+            </div>
+
+            <p style="font-size: 0.74rem; color: var(--muted); margin: 0; line-height: 1.4;">
+              • <b>Gạt BẬT:</b> Cảm biến mực nước tự động bơm khi thiếu nước, dừng khi đầy hoặc tràn.<br>
+              • <b>Gạt TẮT:</b> Điều khiển nút nhấn thủ công hoặc theo lịch hẹn RTC.
+            </p>
+          </div>
+        </div>
+
       </div>
     </div>
 
-    <!-- Thẻ Bảng Điều Khiển & Phản Hồi 10 Thiết Bị Thực Tế -->
+    <!-- Thẻ Bảng Điều Khiển & Phản Hồi 12 Thiết Bị Thực Tế -->
     <div class="card" style="grid-column: 1 / -1;">
       <div class="card-title">
-        <span>⚡</span> BẢNG ĐIỀU KHIỂN & PHẢN HỒI 10 THIẾT BỊ (LỆNH HDX0.x • PHẢN HỒI HDX1.x)
+        <span>⚡</span> BẢNG ĐIỀU KHIỂN & PHẢN HỒI 12 THIẾT BỊ (LỆNH HDX0.x • PHẢN HỒI HDX1.x)
       </div>
       <div class="device-grid">
-        <!-- 10 thiết bị -->
+        <!-- 12 thiết bị -->
         <div class="device-item" id="item-phun_suong_1">
           <div class="device-info">
             <div class="device-name-row">
@@ -567,7 +714,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
               <span class="status-pill status-off" id="pill-phun_suong_1">TẮT</span>
               <span class="lock-badge" id="lock-phun_suong_1" style="display: none;">🔒 Tự động</span>
             </div>
-            <span class="device-tag">Lệnh: HDX0.0 • Phản hồi: HDX1.0</span>
+            <span class="device-tag">Lệnh: HDX0.0 • Phản hồi: HDX1.0 • <b id="tag-cur-phun_suong_1" style="color:#0284c7;">-- A</b></span>
           </div>
           <label class="switch" id="lbl-sw-phun_suong_1" onclick="onSwitchLabelClick(event, 'phun_suong_1')">
             <input type="checkbox" id="sw-phun_suong_1" onchange="sendMqttControl('phun_suong_1', this.checked ? 1 : 0)">
@@ -582,7 +729,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
               <span class="status-pill status-off" id="pill-phun_suong_2">TẮT</span>
               <span class="lock-badge" id="lock-phun_suong_2" style="display: none;">🔒 Tự động</span>
             </div>
-            <span class="device-tag">Lệnh: HDX0.1 • Phản hồi: HDX1.1</span>
+            <span class="device-tag">Lệnh: HDX0.1 • Phản hồi: HDX1.1 • <b id="tag-cur-phun_suong_2" style="color:#0284c7;">-- A</b></span>
           </div>
           <label class="switch" id="lbl-sw-phun_suong_2" onclick="onSwitchLabelClick(event, 'phun_suong_2')">
             <input type="checkbox" id="sw-phun_suong_2" onchange="sendMqttControl('phun_suong_2', this.checked ? 1 : 0)">
@@ -597,7 +744,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
               <span class="status-pill status-off" id="pill-phun_suong_3">TẮT</span>
               <span class="lock-badge" id="lock-phun_suong_3" style="display: none;">🔒 Tự động</span>
             </div>
-            <span class="device-tag">Lệnh: HDX0.2 • Phản hồi: HDX1.2</span>
+            <span class="device-tag">Lệnh: HDX0.2 • Phản hồi: HDX1.2 • <b id="tag-cur-phun_suong_3" style="color:#0284c7;">-- A</b></span>
           </div>
           <label class="switch" id="lbl-sw-phun_suong_3" onclick="onSwitchLabelClick(event, 'phun_suong_3')">
             <input type="checkbox" id="sw-phun_suong_3" onchange="sendMqttControl('phun_suong_3', this.checked ? 1 : 0)">
@@ -626,7 +773,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
               <span class="device-name">Đèn 1</span>
               <span class="status-pill status-off" id="pill-den_1">TẮT</span>
             </div>
-            <span class="device-tag">Lệnh: HDX0.4 • Phản hồi: HDX1.4</span>
+            <span class="device-tag">Lệnh: HDX0.4 • Phản hồi: HDX1.4 • <b id="tag-cur-den_1" style="color:#0284c7;">-- A</b></span>
           </div>
           <label class="switch" id="lbl-sw-den_1">
             <input type="checkbox" id="sw-den_1" onchange="sendMqttControl('den_1', this.checked ? 1 : 0)">
@@ -640,7 +787,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
               <span class="device-name">Đèn 2</span>
               <span class="status-pill status-off" id="pill-den_2">TẮT</span>
             </div>
-            <span class="device-tag">Lệnh: HDX0.5 • Phản hồi: HDX1.5</span>
+            <span class="device-tag">Lệnh: HDX0.5 • Phản hồi: HDX1.5 • <b id="tag-cur-den_2" style="color:#0284c7;">-- A</b></span>
           </div>
           <label class="switch" id="lbl-sw-den_2">
             <input type="checkbox" id="sw-den_2" onchange="sendMqttControl('den_2', this.checked ? 1 : 0)">
@@ -669,7 +816,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
               <span class="device-name">Loa 1</span>
               <span class="status-pill status-off" id="pill-loa_1">TẮT</span>
             </div>
-            <span class="device-tag">Lệnh: HDX0.7 • Phản hồi: HDX1.7</span>
+            <span class="device-tag">Lệnh: HDX0.7 • Phản hồi: HDX1.7 • <b id="tag-cur-loa_1" style="color:#0284c7;">-- A</b></span>
           </div>
           <label class="switch" id="lbl-sw-loa_1">
             <input type="checkbox" id="sw-loa_1" onchange="sendMqttControl('loa_1', this.checked ? 1 : 0)">
@@ -683,7 +830,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
               <span class="device-name">Loa 2</span>
               <span class="status-pill status-off" id="pill-loa_2">TẮT</span>
             </div>
-            <span class="device-tag">Lệnh: HDX0.8 • Phản hồi: HDX1.8</span>
+            <span class="device-tag">Lệnh: HDX0.8 • Phản hồi: HDX1.8 • <b id="tag-cur-loa_2" style="color:#0284c7;">-- A</b></span>
           </div>
           <label class="switch" id="lbl-sw-loa_2">
             <input type="checkbox" id="sw-loa_2" onchange="sendMqttControl('loa_2', this.checked ? 1 : 0)">
@@ -701,6 +848,35 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           </div>
           <label class="switch" id="lbl-sw-loa_3">
             <input type="checkbox" id="sw-loa_3" onchange="sendMqttControl('loa_3', this.checked ? 1 : 0)">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="device-item" id="item-may_bom">
+          <div class="device-info">
+            <div class="device-name-row">
+              <span class="device-name">Máy bơm</span>
+              <span class="status-pill status-off" id="pill-may_bom">TẮT</span>
+              <span class="lock-badge" id="lock-may_bom" style="display: none;">🔒 Tự động</span>
+            </div>
+            <span class="device-tag">Lệnh: HDX0.10 • Phản hồi: HDX1.10 • <b id="tag-cur-may_bom" style="color:#0284c7;">-- A</b></span>
+          </div>
+          <label class="switch" id="lbl-sw-may_bom" onclick="onSwitchLabelClick(event, 'may_bom')">
+            <input type="checkbox" id="sw-may_bom" onchange="sendMqttControl('may_bom', this.checked ? 1 : 0)">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="device-item" id="item-bay_thien_dich">
+          <div class="device-info">
+            <div class="device-name-row">
+              <span class="device-name">Bẫy thiên địch</span>
+              <span class="status-pill status-off" id="pill-bay_thien_dich">TẮT</span>
+            </div>
+            <span class="device-tag">Lệnh: HDX0.11 • Phản hồi: HDX1.11</span>
+          </div>
+          <label class="switch" id="lbl-sw-bay_thien_dich">
+            <input type="checkbox" id="sw-bay_thien_dich" onchange="sendMqttControl('bay_thien_dich', this.checked ? 1 : 0)">
             <span class="slider"></span>
           </label>
         </div>
@@ -730,6 +906,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             <option value="loa_1">Loa 1 (@B_0#HDX0.7 / HDX1.7) - [10 Khung Giờ]</option>
             <option value="loa_2">Loa 2 (@B_0#HDX0.8 / HDX1.8) - [10 Khung Giờ]</option>
             <option value="loa_3">Loa 3 (@B_0#HDX0.9 / HDX1.9) - [10 Khung Giờ]</option>
+            <option value="may_bom">Máy bơm (@B_0#HDX0.10 / HDX1.10) - [10 Khung Giờ]</option>
+            <option value="bay_thien_dich">Bẫy thiên địch (@B_0#HDX0.11 / HDX1.11) - [10 Khung Giờ]</option>
           </select>
         </div>
 
@@ -820,25 +998,29 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
   <script>
     const devKeys = [
       'phun_suong_1', 'phun_suong_2', 'phun_suong_3', 'phun_suong_4',
-      'den_1', 'den_2', 'suoi_1', 'loa_1', 'loa_2', 'loa_3'
+      'den_1', 'den_2', 'suoi_1', 'loa_1', 'loa_2', 'loa_3',
+      'may_bom', 'bay_thien_dich'
     ];
 
     const devNames = {
-      phun_suong_1: 'Phun sương 1 (HDX0.0 / HDX1.0)',
-      phun_suong_2: 'Phun sương 2 (HDX0.1 / HDX1.1)',
-      phun_suong_3: 'Phun sương 3 (HDX0.2 / HDX1.2)',
-      phun_suong_4: 'Phun sương 4 (HDX0.3 / HDX1.3)',
-      den_1:        'Đèn 1 (HDX0.4 / HDX1.4)',
-      den_2:        'Đèn 2 (HDX0.5 / HDX1.5)',
-      suoi_1:       'Sưởi 1 (HDX0.6 / HDX1.6)',
-      loa_1:        'Loa 1 (HDX0.7 / HDX1.7)',
-      loa_2:        'Loa 2 (HDX0.8 / HDX1.8)',
-      loa_3:        'Loa 3 (HDX0.9 / HDX1.9)'
+      phun_suong_1:   'Phun sương 1 (HDX0.0 / HDX1.0)',
+      phun_suong_2:   'Phun sương 2 (HDX0.1 / HDX1.1)',
+      phun_suong_3:   'Phun sương 3 (HDX0.2 / HDX1.2)',
+      phun_suong_4:   'Phun sương 4 (HDX0.3 / HDX1.3)',
+      den_1:          'Đèn 1 (HDX0.4 / HDX1.4)',
+      den_2:          'Đèn 2 (HDX0.5 / HDX1.5)',
+      suoi_1:         'Sưởi 1 (HDX0.6 / HDX1.6)',
+      loa_1:          'Loa 1 (HDX0.7 / HDX1.7)',
+      loa_2:          'Loa 2 (HDX0.8 / HDX1.8)',
+      loa_3:          'Loa 3 (HDX0.9 / HDX1.9)',
+      may_bom:        'Máy bơm (HDX0.10 / HDX1.10)',
+      bay_thien_dich: 'Bẫy thiên địch (HDX0.11 / HDX1.11)'
     };
 
     const PS_DEVICES = ['phun_suong_1', 'phun_suong_2', 'phun_suong_3', 'phun_suong_4'];
     let currentAutoHumidity = false;
     let currentAutoTemp = false;
+    let currentAutoPump = false;
 
     function isMistingDevice(k) {
       return PS_DEVICES.indexOf(k) !== -1;
@@ -1005,6 +1187,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         txt.innerHTML += `<br><span style="color:#0284c7; font-weight:600; font-size:0.8rem; display:inline-block; margin-top:4px;">ℹ️ Chú ý: Thiết bị này đang chạy Tự Động theo cảm biến độ ẩm. Các khung giờ cài đặt sẽ có hiệu lực sau khi bạn tắt chế độ Tự Động.</span>`;
       } else if (dev === 'suoi_1' && currentAutoTemp) {
         txt.innerHTML += `<br><span style="color:#ea580c; font-weight:600; font-size:0.8rem; display:inline-block; margin-top:4px;">ℹ️ Chú ý: Thiết bị này đang chạy Tự Động theo cảm biến nhiệt độ. Các khung giờ cài đặt sẽ có hiệu lực sau khi bạn tắt chế độ Tự Động.</span>`;
+      } else if (dev === 'may_bom' && currentAutoPump) {
+        txt.innerHTML += `<br><span style="color:#0284c7; font-weight:600; font-size:0.8rem; display:inline-block; margin-top:4px;">ℹ️ Chú ý: Thiết bị này đang chạy Tự Động theo cảm biến mực nước. Các khung giờ cài đặt sẽ có hiệu lực sau khi bạn tắt chế độ Tự Động.</span>`;
       }
     }
 
@@ -1187,6 +1371,10 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         event.preventDefault();
         event.stopPropagation();
         alert('Chế độ Tự Động Sưởi đang BẬT!\n\nSưởi 1 đang tự động vận hành theo cảm biến nhiệt độ, không thể bật/tắt thủ công (chỉ để xem trạng thái).\n\nNếu muốn điều khiển bằng tay, vui lòng gạt TẮT công tắc "Sưởi 1" ở mục Điều Khiển Tự Động phía trên.');
+      } else if (devKey === 'may_bom' && currentAutoPump) {
+        event.preventDefault();
+        event.stopPropagation();
+        alert('Chế độ Tự Động Bơm Nước đang BẬT!\n\nMáy bơm đang tự động vận hành theo cảm biến mực nước bể chứa (khi thiếu nước tự bật, đủ nước tự dừng), không thể bật/tắt thủ công (chỉ để xem trạng thái).\n\nNếu muốn điều khiển bằng tay, vui lòng gạt TẮT công tắc "Máy Bơm Nước" ở mục Điều Khiển Tự Động phía trên.');
       }
     }
 
@@ -1249,6 +1437,35 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       if (curSchedDevT) updateStatusSummary(curSchedDevT.value);
     }
 
+    function updatePumpControlLock(isAuto) {
+      currentAutoPump = !!isAuto;
+      const k = 'may_bom';
+      const sw = document.getElementById('sw-' + k);
+      const lbl = document.getElementById('lbl-sw-' + k);
+      const lock = document.getElementById('lock-' + k);
+      const item = document.getElementById('item-' + k);
+
+      if (sw) sw.disabled = currentAutoPump;
+      if (lbl) {
+        if (currentAutoPump) {
+          lbl.classList.add('disabled-switch');
+          lbl.title = 'Đang chạy tự động theo cảm biến mực nước (Khóa điều khiển thủ công - Chỉ xem trạng thái)';
+        } else {
+          lbl.classList.remove('disabled-switch');
+          lbl.title = '';
+        }
+      }
+      if (lock) {
+        lock.style.display = currentAutoPump ? 'inline-flex' : 'none';
+      }
+      if (item) {
+        if (currentAutoPump) item.classList.add('item-auto-locked');
+        else item.classList.remove('item-auto-locked');
+      }
+      const curSchedDevP = document.getElementById('sched-device');
+      if (curSchedDevP) updateStatusSummary(curSchedDevP.value);
+    }
+
     async function sendMqttControl(deviceKey, val) {
       if (isMistingDevice(deviceKey) && currentAutoHumidity) {
         alert('Chế độ Tự Động Phun Sương đang BẬT! Không thể bật/tắt thủ công các bơm phun sương.');
@@ -1257,6 +1474,11 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       }
       if (deviceKey === 'suoi_1' && currentAutoTemp) {
         alert('Chế độ Tự Động Sưởi đang BẬT! Không thể bật/tắt thủ công Sưởi 1.');
+        refreshData();
+        return;
+      }
+      if (deviceKey === 'may_bom' && currentAutoPump) {
+        alert('Chế độ Tự Động Bơm Nước đang BẬT! Không thể bật/tắt thủ công Máy bơm.');
         refreshData();
         return;
       }
@@ -1286,6 +1508,18 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         if (!isChecked) {
           const swEl = document.getElementById('sw-suoi_1');
           const pillEl = document.getElementById('pill-suoi_1');
+          if (swEl) swEl.checked = false;
+          if (pillEl) {
+            pillEl.innerText = 'TẮT';
+            pillEl.className = 'status-pill status-off';
+          }
+        }
+      } else if (type === 'pump') {
+        payload['auto_pump'] = isChecked ? 1 : 0;
+        updatePumpControlLock(isChecked);
+        if (!isChecked) {
+          const swEl = document.getElementById('sw-may_bom');
+          const pillEl = document.getElementById('pill-may_bom');
           if (swEl) swEl.checked = false;
           if (pillEl) {
             pillEl.innerText = 'TẮT';
@@ -1428,6 +1662,20 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           }
         }
 
+        const swPump = document.getElementById('sw-auto-pump');
+        const bPump = document.getElementById('badge-mode-pump');
+        if (swPump && bPump) {
+          swPump.checked = !!data.autoPumpMode;
+          updatePumpControlLock(!!data.autoPumpMode);
+          if (data.autoPumpMode) {
+            bPump.className = 'badge badge-ok';
+            bPump.innerText = 'ĐANG BẬT: TỰ ĐỘNG THEO MỰC NƯỚC';
+          } else {
+            bPump.className = 'badge badge-hb';
+            bPump.innerText = 'ĐANG TẮT: THỦ CÔNG / LỊCH HẸN RTC';
+          }
+        }
+
         // Cập nhật giá trị ngưỡng & chu kỳ vào ô nhập liệu nếu người dùng không focus
         const inHum = document.getElementById('input-hum-threshold');
         if (inHum && document.activeElement !== inHum && data.humThreshold !== undefined) {
@@ -1478,6 +1726,50 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
               pillEl.innerText = isRunning ? 'ĐANG BẬT' : 'TẮT';
               pillEl.className = isRunning ? 'status-pill status-on' : 'status-pill status-off';
             }
+          });
+        }
+
+        // 3.1 Cập nhật Cảm biến Mực nước (@B_0#HDX5.0 & @B_0#HDX5.1)
+        const bEmpty = document.getElementById('badge-water-empty');
+        if (bEmpty) {
+          if (data.waterEmpty == 1) {
+            bEmpty.className = 'badge badge-err';
+            bEmpty.innerText = '⚠️ THIẾU NƯỚC!';
+          } else {
+            bEmpty.className = 'badge badge-ok';
+            bEmpty.innerText = 'ĐỦ NƯỚC';
+          }
+        }
+        const bOver = document.getElementById('badge-water-overflow');
+        if (bOver) {
+          if (data.waterOverflow == 1 || data.waterSafe == 0) {
+            bOver.className = 'badge badge-err';
+            bOver.innerText = '🚨 TRÀN NƯỚC!';
+          } else {
+            bOver.className = 'badge badge-ok';
+            bOver.innerText = 'CHƯA TRÀN';
+          }
+        }
+
+        // 3.2 Cập nhật Cảm biến Âm thanh (dB)
+        if (data.sound) {
+          const s1El = document.getElementById('val-sound-1');
+          const s2El = document.getElementById('val-sound-2');
+          const s3El = document.getElementById('val-sound-3');
+          if (s1El) s1El.innerText = Number(data.sound.s1).toFixed(1);
+          if (s2El) s2El.innerText = Number(data.sound.s2).toFixed(1);
+          if (s3El) s3El.innerText = Number(data.sound.s3).toFixed(1);
+        }
+
+        // 3.3 Cập nhật Cảm biến Dòng điện (A)
+        if (data.current) {
+          const curKeys = ['den_1', 'den_2', 'phun_suong_1', 'phun_suong_2', 'phun_suong_3', 'loa_1', 'loa_2', 'may_bom'];
+          curKeys.forEach(ck => {
+            const curVal = Number(data.current[ck] || 0).toFixed(2);
+            const el = document.getElementById('cur-' + ck);
+            if (el) el.innerText = curVal;
+            const tagEl = document.getElementById('tag-cur-' + ck);
+            if (tagEl) tagEl.innerText = curVal + ' A';
           });
         }
 
@@ -1613,18 +1905,20 @@ String extractJsonString(const String& json, const String& key) {
   return json.substring(firstQuote + 1, secondQuote);
 }
 
-// Hàm cập nhật trạng thái phản hồi thực tế của 10 thiết bị từ chuỗi JSON
+// Hàm cập nhật trạng thái phản hồi thực tế của 12 thiết bị từ chuỗi JSON
 void updateDeviceStatesFromMsg(const String& msg) {
   const char* devKeys[] = {
     "phun_suong_1", "phun_suong_2", "phun_suong_3", "phun_suong_4",
-    "den_1", "den_2", "suoi_1", "loa_1", "loa_2", "loa_3"
+    "den_1", "den_2", "suoi_1", "loa_1", "loa_2", "loa_3",
+    "may_bom", "bay_thien_dich"
   };
   bool* devPtrs[] = {
     &statePhunSuong1, &statePhunSuong2, &statePhunSuong3, &statePhunSuong4,
-    &stateDen1, &stateDen2, &stateSuoi1, &stateLoa1, &stateLoa2, &stateLoa3
+    &stateDen1, &stateDen2, &stateSuoi1, &stateLoa1, &stateLoa2, &stateLoa3,
+    &stateMayBom, &stateBayThienDich
   };
 
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < 12; i++) {
     float val = extractJsonNumber(msg, devKeys[i]);
     if (val != -999.0) {
       *(devPtrs[i]) = (val > 0.5);
@@ -1651,6 +1945,9 @@ void updateDeviceStatesFromMsg(const String& msg) {
 
   float ah = extractJsonNumber(msg, "auto_humidity");
   if (ah != -999.0) autoHumidityMode = (ah > 0.5);
+
+  float ap = extractJsonNumber(msg, "auto_pump");
+  if (ap != -999.0) autoPumpMode = (ap > 0.5);
 
   float tt = extractJsonNumber(msg, "temp_threshold");
   if (tt != -999.0) tempThreshold = tt;
@@ -1764,8 +2061,46 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     // Cập nhật trạng thái phản hồi thực tế của 10 thiết bị (@B_0#HDX1.0 -> @B_0#HDX1.9)
     updateDeviceStatesFromMsg(message);
 
-    Serial.printf("[V-BOX DATA] -> Temp: %.1f °C, Hum: %.1f %%, VBox_HB: %d/60, PLC_HB: %d/60, RS485: %s\n", 
-      currentTemperature, currentHumidity, vboxHeartbeat, plcHeartbeat, plcCommOk ? "OK" : "MẤT TRUYỀN THÔNG");
+    // Trích xuất cảm biến mực nước (@B_0#HDX5.0 & @B_0#HDX5.1)
+    float wEmpty = extractJsonNumber(message, "water_empty");
+    if (wEmpty != -999.0) waterEmpty = (int)wEmpty;
+
+    float wSafe = extractJsonNumber(message, "water_safe");
+    if (wSafe != -999.0) {
+      waterSafe = (int)wSafe;
+      waterOverflow = (waterSafe == 0) ? 1 : 0;
+    }
+    float wOver = extractJsonNumber(message, "water_overflow");
+    if (wOver != -999.0) waterOverflow = (int)wOver;
+
+    // Trích xuất cảm biến âm thanh (dB)
+    float s1 = extractJsonNumber(message, "sound_1");
+    if (s1 != -999.0) sound1 = s1;
+    float s2 = extractJsonNumber(message, "sound_2");
+    if (s2 != -999.0) sound2 = s2;
+    float s3 = extractJsonNumber(message, "sound_3");
+    if (s3 != -999.0) sound3 = s3;
+
+    // Trích xuất cảm biến dòng điện (A) theo mapping.txt
+    float cDen1 = extractJsonNumber(message, "cur_den_1");
+    if (cDen1 != -999.0) curDen1 = cDen1;
+    float cDen2 = extractJsonNumber(message, "cur_den_2");
+    if (cDen2 != -999.0) curDen2 = cDen2;
+    float cPs1 = extractJsonNumber(message, "cur_ps_1");
+    if (cPs1 != -999.0) curPs1 = cPs1;
+    float cPs2 = extractJsonNumber(message, "cur_ps_2");
+    if (cPs2 != -999.0) curPs2 = cPs2;
+    float cPs3 = extractJsonNumber(message, "cur_ps_3");
+    if (cPs3 != -999.0) curPs3 = cPs3;
+    float cLoa1 = extractJsonNumber(message, "cur_loa_1");
+    if (cLoa1 != -999.0) curLoa1 = cLoa1;
+    float cLoa2 = extractJsonNumber(message, "cur_loa_2");
+    if (cLoa2 != -999.0) curLoa2 = cLoa2;
+    float cMb = extractJsonNumber(message, "cur_may_bom");
+    if (cMb != -999.0) curMayBom = cMb;
+
+    Serial.printf("[V-BOX DATA] -> Temp: %.1f °C, Hum: %.1f %%, VBox_HB: %d/60, PLC_HB: %d/60, Water: [Thiếu:%d, Tràn:%d], Sound1: %.1fdB\n", 
+      currentTemperature, currentHumidity, vboxHeartbeat, plcHeartbeat, waterEmpty, waterOverflow, sound1);
   }
 
   // 3. Nhận thời gian thực từ V-Box (Topic: 3FAMIOT/TIME)
@@ -1821,7 +2156,7 @@ void handleGetData() {
   bool isHeartbeatAlive = (lastHeartbeatTime > 0) && ((millis() - lastHeartbeatTime) < 15000);
 
   String json = "{";
-  json.reserve(2048);
+  json.reserve(3072);
   json += "\"temperature\":" + String(currentTemperature, 1) + ",";
   json += "\"humidity\":" + String(currentHumidity, 1) + ",";
   json += "\"heartbeat\":" + String(vboxHeartbeat) + ",";
@@ -1838,9 +2173,28 @@ void handleGetData() {
   json += "\"psCycleState\":" + String(psCycleState) + ",";
   json += "\"autoTempMode\":" + String(autoTempMode ? "true" : "false") + ",";
   json += "\"autoHumidityMode\":" + String(autoHumidityMode ? "true" : "false") + ",";
+  json += "\"autoPumpMode\":" + String(autoPumpMode ? "true" : "false") + ",";
   json += "\"vboxTime\":\"" + vboxTime + "\",";
   json += "\"vboxDate\":\"" + vboxDate + "\",";
   json += "\"mqttConnected\":" + String(mqttClient.connected() ? "true" : "false") + ",";
+  json += "\"waterEmpty\":" + String(waterEmpty) + ",";
+  json += "\"waterSafe\":" + String(waterSafe) + ",";
+  json += "\"waterOverflow\":" + String(waterOverflow) + ",";
+  json += "\"sound\":{";
+  json += "\"s1\":" + String(sound1, 1) + ",";
+  json += "\"s2\":" + String(sound2, 1) + ",";
+  json += "\"s3\":" + String(sound3, 1);
+  json += "},";
+  json += "\"current\":{";
+  json += "\"den_1\":" + String(curDen1, 2) + ",";
+  json += "\"den_2\":" + String(curDen2, 2) + ",";
+  json += "\"phun_suong_1\":" + String(curPs1, 2) + ",";
+  json += "\"phun_suong_2\":" + String(curPs2, 2) + ",";
+  json += "\"phun_suong_3\":" + String(curPs3, 2) + ",";
+  json += "\"loa_1\":" + String(curLoa1, 2) + ",";
+  json += "\"loa_2\":" + String(curLoa2, 2) + ",";
+  json += "\"may_bom\":" + String(curMayBom, 2);
+  json += "},";
   json += "\"devices\":{";
   json += "\"phun_suong_1\":" + String(statePhunSuong1 ? 1 : 0) + ",";
   json += "\"phun_suong_2\":" + String(statePhunSuong2 ? 1 : 0) + ",";
@@ -1851,7 +2205,9 @@ void handleGetData() {
   json += "\"suoi_1\":" + String(stateSuoi1 ? 1 : 0) + ",";
   json += "\"loa_1\":" + String(stateLoa1 ? 1 : 0) + ",";
   json += "\"loa_2\":" + String(stateLoa2 ? 1 : 0) + ",";
-  json += "\"loa_3\":" + String(stateLoa3 ? 1 : 0);
+  json += "\"loa_3\":" + String(stateLoa3 ? 1 : 0) + ",";
+  json += "\"may_bom\":" + String(stateMayBom ? 1 : 0) + ",";
+  json += "\"bay_thien_dich\":" + String(stateBayThienDich ? 1 : 0);
   json += "},";
   json += "\"lastReceived\":\"" + escapeJsonString(lastMqttReceived) + "\",";
   json += "\"lastPublished\":\"" + escapeJsonString(lastMqttPublished) + "\",";
@@ -1890,6 +2246,13 @@ void handleMqttPublish() {
         stateSuoi1 = false;
       }
     }
+    float ap = extractJsonNumber(payload, "auto_pump");
+    if (ap != -999.0) {
+      autoPumpMode = (ap > 0.5);
+      if (!autoPumpMode) {
+        stateMayBom = false;
+      }
+    }
 
     // Nếu đang ở chế độ tự động độ ẩm, từ chối lệnh bật/tắt thủ công cho 4 bơm phun sương (chỉ cho phép xem trạng thái)
     if (autoHumidityMode && payload.indexOf("\"cmd\"") == -1 && payload.indexOf("schedules") == -1) {
@@ -1900,6 +2263,24 @@ void handleMqttPublish() {
           server.send(403, "text/plain; charset=utf-8", "Chế độ Tự động đang BẬT! Không thể điều khiển thủ công phun sương.");
           return;
         }
+      }
+    }
+
+    // Nếu đang ở chế độ tự động nhiệt độ, từ chối lệnh bật/tắt thủ công cho Sưởi 1
+    if (autoTempMode && payload.indexOf("\"cmd\"") == -1 && payload.indexOf("schedules") == -1) {
+      if (payload.indexOf("\"suoi_1\"") != -1) {
+        Serial.println(F("[CẢNH BÁO] Chế độ Tự động nhiệt độ đang BẬT -> Khóa lệnh thủ công cho Sưởi 1!"));
+        server.send(403, "text/plain; charset=utf-8", "Chế độ Tự động đang BẬT! Không thể điều khiển thủ công Sưởi 1.");
+        return;
+      }
+    }
+
+    // Nếu đang ở chế độ tự động bơm nước, từ chối lệnh bật/tắt thủ công cho Máy bơm
+    if (autoPumpMode && payload.indexOf("\"cmd\"") == -1 && payload.indexOf("schedules") == -1) {
+      if (payload.indexOf("\"may_bom\"") != -1) {
+        Serial.println(F("[CẢNH BÁO] Chế độ Tự động bơm nước đang BẬT -> Khóa lệnh thủ công cho Máy bơm!"));
+        server.send(403, "text/plain; charset=utf-8", "Chế độ Tự động đang BẬT! Không thể điều khiển thủ công Máy bơm.");
+        return;
       }
     }
 

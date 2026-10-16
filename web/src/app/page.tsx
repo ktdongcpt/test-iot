@@ -58,7 +58,7 @@ export default function DashboardPage() {
                 V-BOX & PLC SMART CONTROLLER
               </h1>
               <p className="text-xs text-slate-500 font-medium">
-                Hệ thống Web SCADA giám sát truyền thông RS485 & điều khiển 10 thiết bị qua Internet
+                Hệ thống Web SCADA giám sát truyền thông RS485 & điều khiển 12 thiết bị qua Internet
               </p>
             </div>
           </div>
@@ -74,8 +74,11 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* 1. Banner cảnh báo khẩn cấp khi mất RS485 */}
+      {/* 1. Banner cảnh báo khẩn cấp khi mất V-BOX hoặc RS485 PLC */}
       <AlarmBanner
+        vboxCommOk={telemetry.vboxCommOk}
+        vboxAlarmMsg={telemetry.vboxAlarmMsg}
+        vboxHeartbeat={telemetry.vboxHeartbeat}
         plcCommOk={telemetry.plcCommOk}
         plcAlarmMsg={telemetry.plcAlarmMsg}
         plcHeartbeat={telemetry.plcHeartbeat}
@@ -85,13 +88,14 @@ export default function DashboardPage() {
       <ConnectionBar
         mqttConnected={telemetry.mqttConnected}
         vboxHeartbeat={telemetry.vboxHeartbeat}
+        vboxCommOk={telemetry.vboxCommOk}
         plcHeartbeat={telemetry.plcHeartbeat}
         plcCommOk={telemetry.plcCommOk}
         vboxTime={telemetry.vboxTime}
         vboxDate={telemetry.vboxDate}
       />
 
-      {/* 3. Panel Cảm biến Nhiệt độ / Độ ẩm */}
+      {/* 3. Panel Cảm biến Môi Trường & Dòng Điện */}
       <EnvironmentalPanel
         temperature={telemetry.temperature}
         humidity={telemetry.humidity}
@@ -99,28 +103,42 @@ export default function DashboardPage() {
         humThreshold={telemetry.humThreshold}
         autoTempMode={telemetry.autoTempMode}
         autoHumidityMode={telemetry.autoHumidityMode}
+        autoPumpMode={telemetry.autoPumpMode}
+        waterEmpty={telemetry.waterEmpty}
+        waterSafe={telemetry.waterSafe}
+        waterOverflow={telemetry.waterOverflow}
         psCycleState={telemetry.psCycleState}
         psOnSec={telemetry.psOnSec}
         psOffSec={telemetry.psOffSec}
         stateSuoi1={Boolean(telemetry.devices.suoi_1)}
         statePhunSuongAny={anyMistActive}
+        stateMayBom={Boolean(telemetry.devices.may_bom)}
+        sound={telemetry.sound}
+        current={telemetry.current}
       />
 
       {/* 4. Panel Cài đặt tự động theo cảm biến */}
       <AutoControlPanel
         autoTempMode={telemetry.autoTempMode}
         autoHumidityMode={telemetry.autoHumidityMode}
+        autoPumpMode={telemetry.autoPumpMode}
         tempThreshold={telemetry.tempThreshold}
         humThreshold={telemetry.humThreshold}
         psOnSec={telemetry.psOnSec}
         psOffSec={telemetry.psOffSec}
+        waterEmpty={telemetry.waterEmpty}
+        waterSafe={telemetry.waterSafe}
+        waterOverflow={telemetry.waterOverflow}
+        stateMayBom={Boolean(telemetry.devices.may_bom)}
       />
 
-      {/* 5. Bảng điều khiển và phản hồi 10 thiết bị */}
+      {/* 5. Bảng điều khiển và phản hồi 12 thiết bị */}
       <DeviceGrid
         devicesState={telemetry.devices}
         autoTempMode={telemetry.autoTempMode}
         autoHumidityMode={telemetry.autoHumidityMode}
+        autoPumpMode={telemetry.autoPumpMode}
+        current={telemetry.current}
         onOpenSchedule={(dev) => setSelectedDeviceForSchedule(dev)}
       />
 
