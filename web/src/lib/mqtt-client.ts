@@ -55,30 +55,30 @@ class MqttService {
       s3: 0,
     },
     current: {
-      den_1: 0,
-      den_2: 0,
-      phun_suong_1: 0,
-      phun_suong_2: 0,
-      phun_suong_3: 0,
-      loa_1: 0,
-      loa_2: 0,
-      may_bom: 0,
+      light_1: 0,
+      light_2: 0,
+      misting_1: 0,
+      misting_2: 0,
+      misting_3: 0,
+      speaker_1: 0,
+      speaker_2: 0,
+      pump: 0,
     },
     vboxTime: '--:--:--',
     vboxDate: '--/--/----',
     devices: {
-      phun_suong_1: false,
-      phun_suong_2: false,
-      phun_suong_3: false,
-      phun_suong_4: false,
-      den_1: false,
-      den_2: false,
-      suoi_1: false,
-      loa_1: false,
-      loa_2: false,
-      loa_3: false,
-      may_bom: false,
-      bay_thien_dich: false,
+      misting_1: false,
+      misting_2: false,
+      misting_3: false,
+      misting_4: false,
+      light_1: false,
+      light_2: false,
+      heater_1: false,
+      speaker_1: false,
+      speaker_2: false,
+      speaker_3: false,
+      pump: false,
+      insect_trap: false,
     },
     mqttConnected: false,
     lastReceived: 'Chưa có dữ liệu từ V-Box...',
@@ -312,49 +312,96 @@ class MqttService {
           if (data.sound.s3 !== undefined) this.state.sound.s3 = Number(data.sound.s3);
         }
 
-        // Cảm biến dòng điện 8 thiết bị (A)
-        if (data.cur_den_1 !== undefined) this.state.current.den_1 = Number(data.cur_den_1);
-        if (data.cur_den_2 !== undefined) this.state.current.den_2 = Number(data.cur_den_2);
-        if (data.cur_ps_1 !== undefined) this.state.current.phun_suong_1 = Number(data.cur_ps_1);
-        if (data.cur_ps_2 !== undefined) this.state.current.phun_suong_2 = Number(data.cur_ps_2);
-        if (data.cur_ps_3 !== undefined) this.state.current.phun_suong_3 = Number(data.cur_ps_3);
-        if (data.cur_loa_1 !== undefined) this.state.current.loa_1 = Number(data.cur_loa_1);
-        if (data.cur_loa_2 !== undefined) this.state.current.loa_2 = Number(data.cur_loa_2);
-        if (data.cur_may_bom !== undefined) this.state.current.may_bom = Number(data.cur_may_bom);
+        // Cảm biến dòng điện 8 thiết bị (A) - Hỗ trợ cả key tiếng Anh mới và tiếng Việt cũ
+        const curLight1 = data.cur_light_1 ?? data.cur_den_1;
+        if (curLight1 !== undefined) this.state.current.light_1 = Number(curLight1);
+
+        const curLight2 = data.cur_light_2 ?? data.cur_den_2;
+        if (curLight2 !== undefined) this.state.current.light_2 = Number(curLight2);
+
+        const curMist1 = data.cur_misting_1 ?? data.cur_ps_1;
+        if (curMist1 !== undefined) this.state.current.misting_1 = Number(curMist1);
+
+        const curMist2 = data.cur_misting_2 ?? data.cur_ps_2;
+        if (curMist2 !== undefined) this.state.current.misting_2 = Number(curMist2);
+
+        const curMist3 = data.cur_misting_3 ?? data.cur_ps_3;
+        if (curMist3 !== undefined) this.state.current.misting_3 = Number(curMist3);
+
+        const curSpk1 = data.cur_speaker_1 ?? data.cur_loa_1;
+        if (curSpk1 !== undefined) this.state.current.speaker_1 = Number(curSpk1);
+
+        const curSpk2 = data.cur_speaker_2 ?? data.cur_loa_2;
+        if (curSpk2 !== undefined) this.state.current.speaker_2 = Number(curSpk2);
+
+        const curPmp = data.cur_pump ?? data.cur_may_bom;
+        if (curPmp !== undefined) this.state.current.pump = Number(curPmp);
+
         if (data.current) {
-          if (data.current.den_1 !== undefined) this.state.current.den_1 = Number(data.current.den_1);
-          if (data.current.den_2 !== undefined) this.state.current.den_2 = Number(data.current.den_2);
-          if (data.current.phun_suong_1 !== undefined) this.state.current.phun_suong_1 = Number(data.current.phun_suong_1);
-          if (data.current.phun_suong_2 !== undefined) this.state.current.phun_suong_2 = Number(data.current.phun_suong_2);
-          if (data.current.phun_suong_3 !== undefined) this.state.current.phun_suong_3 = Number(data.current.phun_suong_3);
-          if (data.current.loa_1 !== undefined) this.state.current.loa_1 = Number(data.current.loa_1);
-          if (data.current.loa_2 !== undefined) this.state.current.loa_2 = Number(data.current.loa_2);
-          if (data.current.may_bom !== undefined) this.state.current.may_bom = Number(data.current.may_bom);
+          const cL1 = data.current.light_1 ?? data.current.den_1;
+          if (cL1 !== undefined) this.state.current.light_1 = Number(cL1);
+
+          const cL2 = data.current.light_2 ?? data.current.den_2;
+          if (cL2 !== undefined) this.state.current.light_2 = Number(cL2);
+
+          const cM1 = data.current.misting_1 ?? data.current.phun_suong_1;
+          if (cM1 !== undefined) this.state.current.misting_1 = Number(cM1);
+
+          const cM2 = data.current.misting_2 ?? data.current.phun_suong_2;
+          if (cM2 !== undefined) this.state.current.misting_2 = Number(cM2);
+
+          const cM3 = data.current.misting_3 ?? data.current.phun_suong_3;
+          if (cM3 !== undefined) this.state.current.misting_3 = Number(cM3);
+
+          const cS1 = data.current.speaker_1 ?? data.current.loa_1;
+          if (cS1 !== undefined) this.state.current.speaker_1 = Number(cS1);
+
+          const cS2 = data.current.speaker_2 ?? data.current.loa_2;
+          if (cS2 !== undefined) this.state.current.speaker_2 = Number(cS2);
+
+          const cP = data.current.pump ?? data.current.may_bom;
+          if (cP !== undefined) this.state.current.pump = Number(cP);
         }
 
-        // Trạng thái 12 thiết bị phản hồi
+        // Trạng thái 12 thiết bị phản hồi - Hỗ trợ cả key tiếng Anh mới và tiếng Việt cũ
+        const devKeyMapping: Record<DeviceKey, string[]> = {
+          misting_1: ['misting_1', 'phun_suong_1'],
+          misting_2: ['misting_2', 'phun_suong_2', 'fan'],
+          misting_3: ['misting_3', 'phun_suong_3'],
+          misting_4: ['misting_4', 'phun_suong_4'],
+          light_1: ['light_1', 'den_1', 'light'],
+          light_2: ['light_2', 'den_2'],
+          heater_1: ['heater_1', 'suoi_1'],
+          speaker_1: ['speaker_1', 'loa_1'],
+          speaker_2: ['speaker_2', 'loa_2'],
+          speaker_3: ['speaker_3', 'loa_3'],
+          pump: ['pump', 'may_bom'],
+          insect_trap: ['insect_trap', 'bay_thien_dich'],
+        };
+
         const devKeys: DeviceKey[] = [
-          'phun_suong_1', 'phun_suong_2', 'phun_suong_3', 'phun_suong_4',
-          'den_1', 'den_2', 'suoi_1', 'loa_1', 'loa_2', 'loa_3',
-          'may_bom', 'bay_thien_dich'
+          'misting_1', 'misting_2', 'misting_3', 'misting_4',
+          'light_1', 'light_2', 'heater_1', 'speaker_1', 'speaker_2', 'speaker_3',
+          'pump', 'insect_trap'
         ];
+
         devKeys.forEach((k) => {
-          if (data[k] !== undefined) {
-            this.state.devices[k] = Number(data[k]) === 1;
+          const aliases = devKeyMapping[k];
+          for (const alias of aliases) {
+            if (data[alias] !== undefined) {
+              this.state.devices[k] = Number(data[alias]) === 1;
+              break;
+            }
+          }
+          if (data.devices) {
+            for (const alias of aliases) {
+              if (data.devices[alias] !== undefined) {
+                this.state.devices[k] = Number(data.devices[alias]) === 1;
+                break;
+              }
+            }
           }
         });
-        if (data.devices) {
-          devKeys.forEach((k) => {
-            if (data.devices[k] !== undefined) {
-              this.state.devices[k] = Number(data.devices[k]) === 1;
-            }
-          });
-        }
-
-        // Hỗ trợ alias cũ
-        if (data.fan !== undefined && data.phun_suong_2 === undefined) this.state.devices.phun_suong_2 = Number(data.fan) === 1;
-        if (data.pump !== undefined && data.phun_suong_3 === undefined) this.state.devices.phun_suong_3 = Number(data.pump) === 1;
-        if (data.light !== undefined && data.den_1 === undefined) this.state.devices.den_1 = Number(data.light) === 1;
 
         this.emitTelemetry();
 

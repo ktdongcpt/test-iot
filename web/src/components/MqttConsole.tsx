@@ -13,7 +13,7 @@ interface LogEntry {
 
 export const MqttConsole: React.FC = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [customMsg, setCustomMsg] = useState<string>('{"phun_suong_1": 1}');
+  const [customMsg, setCustomMsg] = useState<string>('{"misting_1": 1}');
   const [isOpen, setIsOpen] = useState<boolean>(true);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
@@ -80,16 +80,16 @@ export const MqttConsole: React.FC = () => {
           get_schedules
         </button>
         <button
-          onClick={() => handleTemplate('{"phun_suong_1": 1}')}
+          onClick={() => handleTemplate('{"misting_1": 1}')}
           className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 font-mono"
         >
-          phun_suong_1 = 1
+          misting_1 = 1
         </button>
         <button
-          onClick={() => handleTemplate('{"suoi_1": 0}')}
+          onClick={() => handleTemplate('{"heater_1": 0}')}
           className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded text-slate-700 font-mono"
         >
-          suoi_1 = 0
+          heater_1 = 0
         </button>
         <button
           onClick={() => handleTemplate('{"auto_humidity": 1, "hum_threshold": 75}')}

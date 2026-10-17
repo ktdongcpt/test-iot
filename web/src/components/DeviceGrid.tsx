@@ -24,14 +24,14 @@ interface DeviceGridProps {
   autoHumidityMode: boolean;
   autoPumpMode: boolean;
   current?: {
-    den_1: number;
-    den_2: number;
-    phun_suong_1: number;
-    phun_suong_2: number;
-    phun_suong_3: number;
-    loa_1: number;
-    loa_2: number;
-    may_bom: number;
+    light_1: number;
+    light_2: number;
+    misting_1: number;
+    misting_2: number;
+    misting_3: number;
+    speaker_1: number;
+    speaker_2: number;
+    pump: number;
   };
   onOpenSchedule: (device: DeviceConfig) => void;
 }
@@ -70,13 +70,13 @@ export const DeviceGrid: React.FC<DeviceGridProps> = ({
   };
 
   const isDeviceLocked = (key: DeviceKey) => {
-    if (['phun_suong_1', 'phun_suong_2', 'phun_suong_3', 'phun_suong_4'].includes(key)) {
+    if (['misting_1', 'misting_2', 'misting_3', 'misting_4'].includes(key)) {
       return autoHumidityMode;
     }
-    if (key === 'suoi_1') {
+    if (key === 'heater_1') {
       return autoTempMode;
     }
-    if (key === 'may_bom') {
+    if (key === 'pump') {
       return autoPumpMode;
     }
     return false;
@@ -85,21 +85,21 @@ export const DeviceGrid: React.FC<DeviceGridProps> = ({
   const getCurrentForDevice = (key: DeviceKey): number | null => {
     if (!current) return null;
     switch (key) {
-      case 'den_1': return current.den_1;
-      case 'den_2': return current.den_2;
-      case 'phun_suong_1': return current.phun_suong_1;
-      case 'phun_suong_2': return current.phun_suong_2;
-      case 'phun_suong_3': return current.phun_suong_3;
-      case 'loa_1': return current.loa_1;
-      case 'loa_2': return current.loa_2;
-      case 'may_bom': return current.may_bom;
+      case 'light_1': return current.light_1;
+      case 'light_2': return current.light_2;
+      case 'misting_1': return current.misting_1;
+      case 'misting_2': return current.misting_2;
+      case 'misting_3': return current.misting_3;
+      case 'speaker_1': return current.speaker_1;
+      case 'speaker_2': return current.speaker_2;
+      case 'pump': return current.pump;
       default: return null;
     }
   };
 
   const handleToggle = (dev: DeviceConfig, nextState: boolean) => {
     if (isDeviceLocked(dev.key)) {
-      if (dev.key === 'may_bom') {
+      if (dev.key === 'pump') {
         alert('Máy bơm đang ở chế độ TỰ ĐỘNG THEO PHAO NƯỚC! Hãy gạt TẮT chế độ tự động ở bảng phía trên nếu muốn điều khiển thủ công.');
       } else {
         alert(`Thiết bị ${dev.name} đang ở chế độ TỰ ĐỘNG! Hãy gạt TẮT chế độ tự động ở bảng phía trên nếu muốn điều khiển thủ công.`);

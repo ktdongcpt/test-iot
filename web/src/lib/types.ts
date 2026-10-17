@@ -1,16 +1,16 @@
 export type DeviceKey =
-  | 'phun_suong_1'
-  | 'phun_suong_2'
-  | 'phun_suong_3'
-  | 'phun_suong_4'
-  | 'den_1'
-  | 'den_2'
-  | 'suoi_1'
-  | 'loa_1'
-  | 'loa_2'
-  | 'loa_3'
-  | 'may_bom'
-  | 'bay_thien_dich';
+  | 'misting_1'
+  | 'misting_2'
+  | 'misting_3'
+  | 'misting_4'
+  | 'light_1'
+  | 'light_2'
+  | 'heater_1'
+  | 'speaker_1'
+  | 'speaker_2'
+  | 'speaker_3'
+  | 'pump'
+  | 'insect_trap';
 
 export interface DeviceConfig {
   key: DeviceKey;
@@ -23,18 +23,18 @@ export interface DeviceConfig {
 }
 
 export const DEVICE_DEFINITIONS: DeviceConfig[] = [
-  { key: 'phun_suong_1', name: 'Phun sương 1', category: 'mist', cmdAddr: '@B_0#HDX0.0', statusAddr: '@B_0#HDX1.0', maxSlots: 24, iconName: 'CloudRain' },
-  { key: 'phun_suong_2', name: 'Phun sương 2', category: 'mist', cmdAddr: '@B_0#HDX0.1', statusAddr: '@B_0#HDX1.1', maxSlots: 24, iconName: 'CloudRain' },
-  { key: 'phun_suong_3', name: 'Phun sương 3', category: 'mist', cmdAddr: '@B_0#HDX0.2', statusAddr: '@B_0#HDX1.2', maxSlots: 24, iconName: 'CloudRain' },
-  { key: 'phun_suong_4', name: 'Phun sương 4', category: 'mist', cmdAddr: '@B_0#HDX0.3', statusAddr: '@B_0#HDX1.3', maxSlots: 24, iconName: 'CloudRain' },
-  { key: 'den_1',        name: 'Đèn 1',        category: 'light', cmdAddr: '@B_0#HDX0.4', statusAddr: '@B_0#HDX1.4', maxSlots: 10, iconName: 'Lightbulb' },
-  { key: 'den_2',        name: 'Đèn 2',        category: 'light', cmdAddr: '@B_0#HDX0.5', statusAddr: '@B_0#HDX1.5', maxSlots: 10, iconName: 'Lightbulb' },
-  { key: 'suoi_1',       name: 'Sưởi 1',       category: 'heater', cmdAddr: '@B_0#HDX0.6', statusAddr: '@B_0#HDX1.6', maxSlots: 10, iconName: 'Flame' },
-  { key: 'loa_1',        name: 'Loa 1',        category: 'speaker', cmdAddr: '@B_0#HDX0.7', statusAddr: '@B_0#HDX1.7', maxSlots: 10, iconName: 'Volume2' },
-  { key: 'loa_2',        name: 'Loa 2',        category: 'speaker', cmdAddr: '@B_0#HDX0.8', statusAddr: '@B_0#HDX1.8', maxSlots: 10, iconName: 'Volume2' },
-  { key: 'loa_3',        name: 'Loa 3',        category: 'speaker', cmdAddr: '@B_0#HDX0.9', statusAddr: '@B_0#HDX1.9', maxSlots: 10, iconName: 'Volume2' },
-  { key: 'may_bom',      name: 'Máy bơm',      category: 'pump',    cmdAddr: '@B_0#HDX0.10', statusAddr: '@B_0#HDX1.10', maxSlots: 10, iconName: 'Waves' },
-  { key: 'bay_thien_dich', name: 'Bẫy thiên địch', category: 'trap', cmdAddr: '@B_0#HDX0.11', statusAddr: '@B_0#HDX1.11', maxSlots: 10, iconName: 'Bug' },
+  { key: 'misting_1',   name: 'Phun sương 1', category: 'mist',    cmdAddr: '@B_0#HDX0.0',  statusAddr: '@B_0#HDX1.0',  maxSlots: 24, iconName: 'CloudRain' },
+  { key: 'misting_2',   name: 'Phun sương 2', category: 'mist',    cmdAddr: '@B_0#HDX0.1',  statusAddr: '@B_0#HDX1.1',  maxSlots: 24, iconName: 'CloudRain' },
+  { key: 'misting_3',   name: 'Phun sương 3', category: 'mist',    cmdAddr: '@B_0#HDX0.2',  statusAddr: '@B_0#HDX1.2',  maxSlots: 24, iconName: 'CloudRain' },
+  { key: 'misting_4',   name: 'Phun sương 4', category: 'mist',    cmdAddr: '@B_0#HDX0.3',  statusAddr: '@B_0#HDX1.3',  maxSlots: 24, iconName: 'CloudRain' },
+  { key: 'light_1',     name: 'Đèn 1',        category: 'light',   cmdAddr: '@B_0#HDX0.4',  statusAddr: '@B_0#HDX1.4',  maxSlots: 10, iconName: 'Lightbulb' },
+  { key: 'light_2',     name: 'Đèn 2',        category: 'light',   cmdAddr: '@B_0#HDX0.5',  statusAddr: '@B_0#HDX1.5',  maxSlots: 10, iconName: 'Lightbulb' },
+  { key: 'heater_1',    name: 'Sưởi 1',       category: 'heater',  cmdAddr: '@B_0#HDX0.6',  statusAddr: '@B_0#HDX1.6',  maxSlots: 10, iconName: 'Flame' },
+  { key: 'speaker_1',   name: 'Loa 1',        category: 'speaker', cmdAddr: '@B_0#HDX0.7',  statusAddr: '@B_0#HDX1.7',  maxSlots: 10, iconName: 'Volume2' },
+  { key: 'speaker_2',   name: 'Loa 2',        category: 'speaker', cmdAddr: '@B_0#HDX0.8',  statusAddr: '@B_0#HDX1.8',  maxSlots: 10, iconName: 'Volume2' },
+  { key: 'speaker_3',   name: 'Loa 3',        category: 'speaker', cmdAddr: '@B_0#HDX0.9',  statusAddr: '@B_0#HDX1.9',  maxSlots: 10, iconName: 'Volume2' },
+  { key: 'pump',        name: 'Máy bơm',      category: 'pump',    cmdAddr: '@B_0#HDX0.10', statusAddr: '@B_0#HDX1.10', maxSlots: 10, iconName: 'Waves' },
+  { key: 'insect_trap', name: 'Bẫy thiên địch', category: 'trap',  cmdAddr: '@B_0#HDX0.11', statusAddr: '@B_0#HDX1.11', maxSlots: 10, iconName: 'Bug' },
 ];
 
 export interface ScheduleSlot {
@@ -81,14 +81,14 @@ export interface TelemetryState {
     s3: number;
   };
   current: {
-    den_1: number;
-    den_2: number;
-    phun_suong_1: number;
-    phun_suong_2: number;
-    phun_suong_3: number;
-    loa_1: number;
-    loa_2: number;
-    may_bom: number;
+    light_1: number;
+    light_2: number;
+    misting_1: number;
+    misting_2: number;
+    misting_3: number;
+    speaker_1: number;
+    speaker_2: number;
+    pump: number;
   };
   vboxTime: string;
   vboxDate: string;

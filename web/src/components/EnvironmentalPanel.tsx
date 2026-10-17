@@ -37,14 +37,14 @@ interface EnvironmentalPanelProps {
     s3: number;
   };
   current: {
-    den_1: number;
-    den_2: number;
-    phun_suong_1: number;
-    phun_suong_2: number;
-    phun_suong_3: number;
-    loa_1: number;
-    loa_2: number;
-    may_bom: number;
+    light_1: number;
+    light_2: number;
+    misting_1: number;
+    misting_2: number;
+    misting_3: number;
+    speaker_1: number;
+    speaker_2: number;
+    pump: number;
   };
 }
 
@@ -103,16 +103,16 @@ export const EnvironmentalPanel: React.FC<EnvironmentalPanelProps> = ({
   const isOverflow = waterOverflow === 1 || waterSafe === 0;
   const isLackWater = waterEmpty === 1;
 
-  // Danh sách dòng điện 8 thiết bị
+  // Danh sách dòng điện 8 thiết bị (giữ nguyên nhãn tiếng Việt)
   const currentDevices = [
-    { key: 'den_1', label: 'Đèn 1', addr: 'HDW20', val: current?.den_1 ?? 0 },
-    { key: 'den_2', label: 'Đèn 2', addr: 'HDW21', val: current?.den_2 ?? 0 },
-    { key: 'phun_suong_1', label: 'Phun sương 1', addr: 'HDW22', val: current?.phun_suong_1 ?? 0 },
-    { key: 'phun_suong_2', label: 'Phun sương 2', addr: 'HDW23', val: current?.phun_suong_2 ?? 0 },
-    { key: 'phun_suong_3', label: 'Phun sương 3', addr: 'HDW24', val: current?.phun_suong_3 ?? 0 },
-    { key: 'loa_1', label: 'Loa 1', addr: 'HDW25', val: current?.loa_1 ?? 0 },
-    { key: 'loa_2', label: 'Loa 2', addr: 'HDW26', val: current?.loa_2 ?? 0 },
-    { key: 'may_bom', label: 'Máy bơm', addr: 'HDW27', val: current?.may_bom ?? 0 },
+    { key: 'light_1', label: 'Đèn 1', addr: 'HDW20', val: current?.light_1 ?? 0 },
+    { key: 'light_2', label: 'Đèn 2', addr: 'HDW21', val: current?.light_2 ?? 0 },
+    { key: 'misting_1', label: 'Phun sương 1', addr: 'HDW22', val: current?.misting_1 ?? 0 },
+    { key: 'misting_2', label: 'Phun sương 2', addr: 'HDW23', val: current?.misting_2 ?? 0 },
+    { key: 'misting_3', label: 'Phun sương 3', addr: 'HDW24', val: current?.misting_3 ?? 0 },
+    { key: 'speaker_1', label: 'Loa 1', addr: 'HDW25', val: current?.speaker_1 ?? 0 },
+    { key: 'speaker_2', label: 'Loa 2', addr: 'HDW26', val: current?.speaker_2 ?? 0 },
+    { key: 'pump', label: 'Máy bơm', addr: 'HDW27', val: current?.pump ?? 0 },
   ];
 
   return (

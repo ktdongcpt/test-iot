@@ -113,18 +113,18 @@ unsigned long lastMqttMsgTime = 0;
 unsigned long lastReconnectAttempt = 0;
 
 // Trạng thái phản hồi thực tế của 12 thiết bị (Đọc từ @B_0#HDX1.0 -> @B_0#HDX1.11)
-bool statePhunSuong1   = false; // Phản hồi @B_0#HDX1.0
-bool statePhunSuong2   = false; // Phản hồi @B_0#HDX1.1
-bool statePhunSuong3   = false; // Phản hồi @B_0#HDX1.2
-bool statePhunSuong4   = false; // Phản hồi @B_0#HDX1.3
-bool stateDen1         = false; // Phản hồi @B_0#HDX1.4
-bool stateDen2         = false; // Phản hồi @B_0#HDX1.5
-bool stateSuoi1        = false; // Phản hồi @B_0#HDX1.6
-bool stateLoa1         = false; // Phản hồi @B_0#HDX1.7
-bool stateLoa2         = false; // Phản hồi @B_0#HDX1.8
-bool stateLoa3         = false; // Phản hồi @B_0#HDX1.9
-bool stateMayBom       = false; // Phản hồi @B_0#HDX1.10
-bool stateBayThienDich = false; // Phản hồi @B_0#HDX1.11
+bool stateMisting1   = false; // Phản hồi @B_0#HDX1.0
+bool stateMisting2   = false; // Phản hồi @B_0#HDX1.1
+bool stateMisting3   = false; // Phản hồi @B_0#HDX1.2
+bool stateMisting4   = false; // Phản hồi @B_0#HDX1.3
+bool stateLight1     = false; // Phản hồi @B_0#HDX1.4
+bool stateLight2     = false; // Phản hồi @B_0#HDX1.5
+bool stateHeater1    = false; // Phản hồi @B_0#HDX1.6
+bool stateSpeaker1   = false; // Phản hồi @B_0#HDX1.7
+bool stateSpeaker2   = false; // Phản hồi @B_0#HDX1.8
+bool stateSpeaker3   = false; // Phản hồi @B_0#HDX1.9
+bool statePump       = false; // Phản hồi @B_0#HDX1.10
+bool stateInsectTrap = false; // Phản hồi @B_0#HDX1.11
 
 // Cảm biến mực nước (@B_0#HDX5.0: 0 = Đủ nước, 1 = Thiếu nước; @B_0#HDX5.1: 1 = Chưa tràn, 0 = Tràn)
 int waterEmpty = 0;    // 1: Thiếu nước, 0: Đủ nước
@@ -137,14 +137,14 @@ float sound2 = 0.0;
 float sound3 = 0.0;
 
 // Cảm biến dòng điện (A, hệ số 0.01 theo mapping.txt)
-float curDen1   = 0.0; // HDW20: Dòng điện đèn 1
-float curDen2   = 0.0; // HDW21: Dòng điện đèn 2
-float curPs1    = 0.0; // HDW22: Dòng điện phun sương 1
-float curPs2    = 0.0; // HDW23: Dòng điện phun sương 2
-float curPs3    = 0.0; // HDW24: Dòng điện phun sương 3
-float curLoa1   = 0.0; // HDW25: Dòng điện loa 1
-float curLoa2   = 0.0; // HDW26: Dòng điện loa 2
-float curMayBom = 0.0; // HDW27: Dòng điện máy bơm
+float curLight1   = 0.0; // HDW20: Light 1 Current
+float curLight2   = 0.0; // HDW21: Light 2 Current
+float curMisting1 = 0.0; // HDW22: Misting 1 Current
+float curMisting2 = 0.0; // HDW23: Misting 2 Current
+float curMisting3 = 0.0; // HDW24: Misting 3 Current
+float curSpeaker1 = 0.0; // HDW25: Speaker 1 Current
+float curSpeaker2 = 0.0; // HDW26: Speaker 2 Current
+float curPump     = 0.0; // HDW27: Pump Current
 
 // ==============================================================================
 // 5. GIAO DIỆN WEB (HTML, CSS, JS HIỆN ĐẠI CÓ BANNER CẢNH BÁO MẤT RS485 & 2 HEARTBEAT)
@@ -516,35 +516,35 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 10px; margin-top: 6px;">
         <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;">
           <div style="font-size: 0.74rem; color: var(--muted); font-weight: 600;">Đèn 1 (HDW20)</div>
-          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-den_1">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-light_1">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
         </div>
         <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;">
           <div style="font-size: 0.74rem; color: var(--muted); font-weight: 600;">Đèn 2 (HDW21)</div>
-          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-den_2">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-light_2">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
         </div>
         <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;">
           <div style="font-size: 0.74rem; color: var(--muted); font-weight: 600;">Phun sương 1 (HDW22)</div>
-          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-phun_suong_1">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-misting_1">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
         </div>
         <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;">
           <div style="font-size: 0.74rem; color: var(--muted); font-weight: 600;">Phun sương 2 (HDW23)</div>
-          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-phun_suong_2">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-misting_2">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
         </div>
         <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;">
           <div style="font-size: 0.74rem; color: var(--muted); font-weight: 600;">Phun sương 3 (HDW24)</div>
-          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-phun_suong_3">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-misting_3">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
         </div>
         <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;">
           <div style="font-size: 0.74rem; color: var(--muted); font-weight: 600;">Loa 1 (HDW25)</div>
-          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-loa_1">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-speaker_1">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
         </div>
         <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;">
           <div style="font-size: 0.74rem; color: var(--muted); font-weight: 600;">Loa 2 (HDW26)</div>
-          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-loa_2">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-speaker_2">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
         </div>
         <div style="background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;">
           <div style="font-size: 0.74rem; color: var(--muted); font-weight: 600;">Máy bơm (HDW27)</div>
-          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-may_bom">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
+          <div style="font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-top: 2px;"><span id="cur-pump">0.00</span> <span style="font-size: 0.75rem; color: var(--muted);">A</span></div>
         </div>
       </div>
     </div>
@@ -707,176 +707,176 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
       </div>
       <div class="device-grid">
         <!-- 12 thiết bị -->
-        <div class="device-item" id="item-phun_suong_1">
+        <div class="device-item" id="item-misting_1">
           <div class="device-info">
             <div class="device-name-row">
               <span class="device-name">Phun sương 1</span>
-              <span class="status-pill status-off" id="pill-phun_suong_1">TẮT</span>
-              <span class="lock-badge" id="lock-phun_suong_1" style="display: none;">🔒 Tự động</span>
+              <span class="status-pill status-off" id="pill-misting_1">TẮT</span>
+              <span class="lock-badge" id="lock-misting_1" style="display: none;">🔒 Tự động</span>
             </div>
-            <span class="device-tag">Lệnh: HDX0.0 • Phản hồi: HDX1.0 • <b id="tag-cur-phun_suong_1" style="color:#0284c7;">-- A</b></span>
+            <span class="device-tag">Lệnh: HDX0.0 • Phản hồi: HDX1.0 • <b id="tag-cur-misting_1" style="color:#0284c7;">-- A</b></span>
           </div>
-          <label class="switch" id="lbl-sw-phun_suong_1" onclick="onSwitchLabelClick(event, 'phun_suong_1')">
-            <input type="checkbox" id="sw-phun_suong_1" onchange="sendMqttControl('phun_suong_1', this.checked ? 1 : 0)">
+          <label class="switch" id="lbl-sw-misting_1" onclick="onSwitchLabelClick(event, 'misting_1')">
+            <input type="checkbox" id="sw-misting_1" onchange="sendMqttControl('misting_1', this.checked ? 1 : 0)">
             <span class="slider"></span>
           </label>
         </div>
 
-        <div class="device-item" id="item-phun_suong_2">
+        <div class="device-item" id="item-misting_2">
           <div class="device-info">
             <div class="device-name-row">
               <span class="device-name">Phun sương 2</span>
-              <span class="status-pill status-off" id="pill-phun_suong_2">TẮT</span>
-              <span class="lock-badge" id="lock-phun_suong_2" style="display: none;">🔒 Tự động</span>
+              <span class="status-pill status-off" id="pill-misting_2">TẮT</span>
+              <span class="lock-badge" id="lock-misting_2" style="display: none;">🔒 Tự động</span>
             </div>
-            <span class="device-tag">Lệnh: HDX0.1 • Phản hồi: HDX1.1 • <b id="tag-cur-phun_suong_2" style="color:#0284c7;">-- A</b></span>
+            <span class="device-tag">Lệnh: HDX0.1 • Phản hồi: HDX1.1 • <b id="tag-cur-misting_2" style="color:#0284c7;">-- A</b></span>
           </div>
-          <label class="switch" id="lbl-sw-phun_suong_2" onclick="onSwitchLabelClick(event, 'phun_suong_2')">
-            <input type="checkbox" id="sw-phun_suong_2" onchange="sendMqttControl('phun_suong_2', this.checked ? 1 : 0)">
+          <label class="switch" id="lbl-sw-misting_2" onclick="onSwitchLabelClick(event, 'misting_2')">
+            <input type="checkbox" id="sw-misting_2" onchange="sendMqttControl('misting_2', this.checked ? 1 : 0)">
             <span class="slider"></span>
           </label>
         </div>
 
-        <div class="device-item" id="item-phun_suong_3">
+        <div class="device-item" id="item-misting_3">
           <div class="device-info">
             <div class="device-name-row">
               <span class="device-name">Phun sương 3</span>
-              <span class="status-pill status-off" id="pill-phun_suong_3">TẮT</span>
-              <span class="lock-badge" id="lock-phun_suong_3" style="display: none;">🔒 Tự động</span>
+              <span class="status-pill status-off" id="pill-misting_3">TẮT</span>
+              <span class="lock-badge" id="lock-misting_3" style="display: none;">🔒 Tự động</span>
             </div>
-            <span class="device-tag">Lệnh: HDX0.2 • Phản hồi: HDX1.2 • <b id="tag-cur-phun_suong_3" style="color:#0284c7;">-- A</b></span>
+            <span class="device-tag">Lệnh: HDX0.2 • Phản hồi: HDX1.2 • <b id="tag-cur-misting_3" style="color:#0284c7;">-- A</b></span>
           </div>
-          <label class="switch" id="lbl-sw-phun_suong_3" onclick="onSwitchLabelClick(event, 'phun_suong_3')">
-            <input type="checkbox" id="sw-phun_suong_3" onchange="sendMqttControl('phun_suong_3', this.checked ? 1 : 0)">
+          <label class="switch" id="lbl-sw-misting_3" onclick="onSwitchLabelClick(event, 'misting_3')">
+            <input type="checkbox" id="sw-misting_3" onchange="sendMqttControl('misting_3', this.checked ? 1 : 0)">
             <span class="slider"></span>
           </label>
         </div>
 
-        <div class="device-item" id="item-phun_suong_4">
+        <div class="device-item" id="item-misting_4">
           <div class="device-info">
             <div class="device-name-row">
               <span class="device-name">Phun sương 4</span>
-              <span class="status-pill status-off" id="pill-phun_suong_4">TẮT</span>
-              <span class="lock-badge" id="lock-phun_suong_4" style="display: none;">🔒 Tự động</span>
+              <span class="status-pill status-off" id="pill-misting_4">TẮT</span>
+              <span class="lock-badge" id="lock-misting_4" style="display: none;">🔒 Tự động</span>
             </div>
             <span class="device-tag">Lệnh: HDX0.3 • Phản hồi: HDX1.3</span>
           </div>
-          <label class="switch" id="lbl-sw-phun_suong_4" onclick="onSwitchLabelClick(event, 'phun_suong_4')">
-            <input type="checkbox" id="sw-phun_suong_4" onchange="sendMqttControl('phun_suong_4', this.checked ? 1 : 0)">
+          <label class="switch" id="lbl-sw-misting_4" onclick="onSwitchLabelClick(event, 'misting_4')">
+            <input type="checkbox" id="sw-misting_4" onchange="sendMqttControl('misting_4', this.checked ? 1 : 0)">
             <span class="slider"></span>
           </label>
         </div>
 
-        <div class="device-item" id="item-den_1">
+        <div class="device-item" id="item-light_1">
           <div class="device-info">
             <div class="device-name-row">
               <span class="device-name">Đèn 1</span>
-              <span class="status-pill status-off" id="pill-den_1">TẮT</span>
+              <span class="status-pill status-off" id="pill-light_1">TẮT</span>
             </div>
-            <span class="device-tag">Lệnh: HDX0.4 • Phản hồi: HDX1.4 • <b id="tag-cur-den_1" style="color:#0284c7;">-- A</b></span>
+            <span class="device-tag">Lệnh: HDX0.4 • Phản hồi: HDX1.4 • <b id="tag-cur-light_1" style="color:#0284c7;">-- A</b></span>
           </div>
-          <label class="switch" id="lbl-sw-den_1">
-            <input type="checkbox" id="sw-den_1" onchange="sendMqttControl('den_1', this.checked ? 1 : 0)">
+          <label class="switch" id="lbl-sw-light_1">
+            <input type="checkbox" id="sw-light_1" onchange="sendMqttControl('light_1', this.checked ? 1 : 0)">
             <span class="slider"></span>
           </label>
         </div>
 
-        <div class="device-item" id="item-den_2">
+        <div class="device-item" id="item-light_2">
           <div class="device-info">
             <div class="device-name-row">
               <span class="device-name">Đèn 2</span>
-              <span class="status-pill status-off" id="pill-den_2">TẮT</span>
+              <span class="status-pill status-off" id="pill-light_2">TẮT</span>
             </div>
-            <span class="device-tag">Lệnh: HDX0.5 • Phản hồi: HDX1.5 • <b id="tag-cur-den_2" style="color:#0284c7;">-- A</b></span>
+            <span class="device-tag">Lệnh: HDX0.5 • Phản hồi: HDX1.5 • <b id="tag-cur-light_2" style="color:#0284c7;">-- A</b></span>
           </div>
-          <label class="switch" id="lbl-sw-den_2">
-            <input type="checkbox" id="sw-den_2" onchange="sendMqttControl('den_2', this.checked ? 1 : 0)">
+          <label class="switch" id="lbl-sw-light_2">
+            <input type="checkbox" id="sw-light_2" onchange="sendMqttControl('light_2', this.checked ? 1 : 0)">
             <span class="slider"></span>
           </label>
         </div>
 
-        <div class="device-item" id="item-suoi_1">
+        <div class="device-item" id="item-heater_1">
           <div class="device-info">
             <div class="device-name-row">
               <span class="device-name">Sưởi 1</span>
-              <span class="status-pill status-off" id="pill-suoi_1">TẮT</span>
-              <span class="lock-badge" id="lock-suoi_1" style="display: none;">🔒 Tự động</span>
+              <span class="status-pill status-off" id="pill-heater_1">TẮT</span>
+              <span class="lock-badge" id="lock-heater_1" style="display: none;">🔒 Tự động</span>
             </div>
             <span class="device-tag">Lệnh: HDX0.6 • Phản hồi: HDX1.6</span>
           </div>
-          <label class="switch" id="lbl-sw-suoi_1" onclick="onSwitchLabelClick(event, 'suoi_1')">
-            <input type="checkbox" id="sw-suoi_1" onchange="sendMqttControl('suoi_1', this.checked ? 1 : 0)">
+          <label class="switch" id="lbl-sw-heater_1" onclick="onSwitchLabelClick(event, 'heater_1')">
+            <input type="checkbox" id="sw-heater_1" onchange="sendMqttControl('heater_1', this.checked ? 1 : 0)">
             <span class="slider"></span>
           </label>
         </div>
 
-        <div class="device-item" id="item-loa_1">
+        <div class="device-item" id="item-speaker_1">
           <div class="device-info">
             <div class="device-name-row">
               <span class="device-name">Loa 1</span>
-              <span class="status-pill status-off" id="pill-loa_1">TẮT</span>
+              <span class="status-pill status-off" id="pill-speaker_1">TẮT</span>
             </div>
-            <span class="device-tag">Lệnh: HDX0.7 • Phản hồi: HDX1.7 • <b id="tag-cur-loa_1" style="color:#0284c7;">-- A</b></span>
+            <span class="device-tag">Lệnh: HDX0.7 • Phản hồi: HDX1.7 • <b id="tag-cur-speaker_1" style="color:#0284c7;">-- A</b></span>
           </div>
-          <label class="switch" id="lbl-sw-loa_1">
-            <input type="checkbox" id="sw-loa_1" onchange="sendMqttControl('loa_1', this.checked ? 1 : 0)">
+          <label class="switch" id="lbl-sw-speaker_1">
+            <input type="checkbox" id="sw-speaker_1" onchange="sendMqttControl('speaker_1', this.checked ? 1 : 0)">
             <span class="slider"></span>
           </label>
         </div>
 
-        <div class="device-item" id="item-loa_2">
+        <div class="device-item" id="item-speaker_2">
           <div class="device-info">
             <div class="device-name-row">
               <span class="device-name">Loa 2</span>
-              <span class="status-pill status-off" id="pill-loa_2">TẮT</span>
+              <span class="status-pill status-off" id="pill-speaker_2">TẮT</span>
             </div>
-            <span class="device-tag">Lệnh: HDX0.8 • Phản hồi: HDX1.8 • <b id="tag-cur-loa_2" style="color:#0284c7;">-- A</b></span>
+            <span class="device-tag">Lệnh: HDX0.8 • Phản hồi: HDX1.8 • <b id="tag-cur-speaker_2" style="color:#0284c7;">-- A</b></span>
           </div>
-          <label class="switch" id="lbl-sw-loa_2">
-            <input type="checkbox" id="sw-loa_2" onchange="sendMqttControl('loa_2', this.checked ? 1 : 0)">
+          <label class="switch" id="lbl-sw-speaker_2">
+            <input type="checkbox" id="sw-speaker_2" onchange="sendMqttControl('speaker_2', this.checked ? 1 : 0)">
             <span class="slider"></span>
           </label>
         </div>
 
-        <div class="device-item" id="item-loa_3">
+        <div class="device-item" id="item-speaker_3">
           <div class="device-info">
             <div class="device-name-row">
               <span class="device-name">Loa 3</span>
-              <span class="status-pill status-off" id="pill-loa_3">TẮT</span>
+              <span class="status-pill status-off" id="pill-speaker_3">TẮT</span>
             </div>
             <span class="device-tag">Lệnh: HDX0.9 • Phản hồi: HDX1.9</span>
           </div>
-          <label class="switch" id="lbl-sw-loa_3">
-            <input type="checkbox" id="sw-loa_3" onchange="sendMqttControl('loa_3', this.checked ? 1 : 0)">
+          <label class="switch" id="lbl-sw-speaker_3">
+            <input type="checkbox" id="sw-speaker_3" onchange="sendMqttControl('speaker_3', this.checked ? 1 : 0)">
             <span class="slider"></span>
           </label>
         </div>
 
-        <div class="device-item" id="item-may_bom">
+        <div class="device-item" id="item-pump">
           <div class="device-info">
             <div class="device-name-row">
               <span class="device-name">Máy bơm</span>
-              <span class="status-pill status-off" id="pill-may_bom">TẮT</span>
-              <span class="lock-badge" id="lock-may_bom" style="display: none;">🔒 Tự động</span>
+              <span class="status-pill status-off" id="pill-pump">TẮT</span>
+              <span class="lock-badge" id="lock-pump" style="display: none;">🔒 Tự động</span>
             </div>
-            <span class="device-tag">Lệnh: HDX0.10 • Phản hồi: HDX1.10 • <b id="tag-cur-may_bom" style="color:#0284c7;">-- A</b></span>
+            <span class="device-tag">Lệnh: HDX0.10 • Phản hồi: HDX1.10 • <b id="tag-cur-pump" style="color:#0284c7;">-- A</b></span>
           </div>
-          <label class="switch" id="lbl-sw-may_bom" onclick="onSwitchLabelClick(event, 'may_bom')">
-            <input type="checkbox" id="sw-may_bom" onchange="sendMqttControl('may_bom', this.checked ? 1 : 0)">
+          <label class="switch" id="lbl-sw-pump" onclick="onSwitchLabelClick(event, 'pump')">
+            <input type="checkbox" id="sw-pump" onchange="sendMqttControl('pump', this.checked ? 1 : 0)">
             <span class="slider"></span>
           </label>
         </div>
 
-        <div class="device-item" id="item-bay_thien_dich">
+        <div class="device-item" id="item-insect_trap">
           <div class="device-info">
             <div class="device-name-row">
-              <span class="device-name">Bẫy thiên địch</span>
-              <span class="status-pill status-off" id="pill-bay_thien_dich">TẮT</span>
+              <span class="device-name">Bẫy côn trùng</span>
+              <span class="status-pill status-off" id="pill-insect_trap">TẮT</span>
             </div>
             <span class="device-tag">Lệnh: HDX0.11 • Phản hồi: HDX1.11</span>
           </div>
-          <label class="switch" id="lbl-sw-bay_thien_dich">
-            <input type="checkbox" id="sw-bay_thien_dich" onchange="sendMqttControl('bay_thien_dich', this.checked ? 1 : 0)">
+          <label class="switch" id="lbl-sw-insect_trap">
+            <input type="checkbox" id="sw-insect_trap" onchange="sendMqttControl('insect_trap', this.checked ? 1 : 0)">
             <span class="slider"></span>
           </label>
         </div>
@@ -896,18 +896,18 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         <div class="form-group">
           <label style="font-weight: 600; color: var(--primary);">👉 Chọn thiết bị cài lịch hẹn:</label>
           <select id="sched-device" onchange="onDeviceSelectChange()">
-            <option value="phun_suong_1">Phun sương 1 (@B_0#HDX0.0 / HDX1.0) - [24 Khung Giờ]</option>
-            <option value="phun_suong_2">Phun sương 2 (@B_0#HDX0.1 / HDX1.1) - [24 Khung Giờ]</option>
-            <option value="phun_suong_3">Phun sương 3 (@B_0#HDX0.2 / HDX1.2) - [24 Khung Giờ]</option>
-            <option value="phun_suong_4">Phun sương 4 (@B_0#HDX0.3 / HDX1.3) - [24 Khung Giờ]</option>
-            <option value="den_1">Đèn 1 (@B_0#HDX0.4 / HDX1.4) - [10 Khung Giờ]</option>
-            <option value="den_2">Đèn 2 (@B_0#HDX0.5 / HDX1.5) - [10 Khung Giờ]</option>
-            <option value="suoi_1">Sưởi 1 (@B_0#HDX0.6 / HDX1.6) - [10 Khung Giờ]</option>
-            <option value="loa_1">Loa 1 (@B_0#HDX0.7 / HDX1.7) - [10 Khung Giờ]</option>
-            <option value="loa_2">Loa 2 (@B_0#HDX0.8 / HDX1.8) - [10 Khung Giờ]</option>
-            <option value="loa_3">Loa 3 (@B_0#HDX0.9 / HDX1.9) - [10 Khung Giờ]</option>
-            <option value="may_bom">Máy bơm (@B_0#HDX0.10 / HDX1.10) - [10 Khung Giờ]</option>
-            <option value="bay_thien_dich">Bẫy thiên địch (@B_0#HDX0.11 / HDX1.11) - [10 Khung Giờ]</option>
+            <option value="misting_1">Phun sương 1 (@B_0#HDX0.0 / HDX1.0) - [24 Khung Giờ]</option>
+            <option value="misting_2">Phun sương 2 (@B_0#HDX0.1 / HDX1.1) - [24 Khung Giờ]</option>
+            <option value="misting_3">Phun sương 3 (@B_0#HDX0.2 / HDX1.2) - [24 Khung Giờ]</option>
+            <option value="misting_4">Phun sương 4 (@B_0#HDX0.3 / HDX1.3) - [24 Khung Giờ]</option>
+            <option value="light_1">Đèn 1 (@B_0#HDX0.4 / HDX1.4) - [10 Khung Giờ]</option>
+            <option value="light_2">Đèn 2 (@B_0#HDX0.5 / HDX1.5) - [10 Khung Giờ]</option>
+            <option value="heater_1">Sưởi 1 (@B_0#HDX0.6 / HDX1.6) - [10 Khung Giờ]</option>
+            <option value="speaker_1">Loa 1 (@B_0#HDX0.7 / HDX1.7) - [10 Khung Giờ]</option>
+            <option value="speaker_2">Loa 2 (@B_0#HDX0.8 / HDX1.8) - [10 Khung Giờ]</option>
+            <option value="speaker_3">Loa 3 (@B_0#HDX0.9 / HDX1.9) - [10 Khung Giờ]</option>
+            <option value="pump">Máy bơm (@B_0#HDX0.10 / HDX1.10) - [10 Khung Giờ]</option>
+            <option value="insect_trap">Bẫy côn trùng (@B_0#HDX0.11 / HDX1.11) - [10 Khung Giờ]</option>
           </select>
         </div>
 
@@ -997,27 +997,27 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
   <script>
     const devKeys = [
-      'phun_suong_1', 'phun_suong_2', 'phun_suong_3', 'phun_suong_4',
-      'den_1', 'den_2', 'suoi_1', 'loa_1', 'loa_2', 'loa_3',
-      'may_bom', 'bay_thien_dich'
+      'misting_1', 'misting_2', 'misting_3', 'misting_4',
+      'light_1', 'light_2', 'heater_1', 'speaker_1', 'speaker_2', 'speaker_3',
+      'pump', 'insect_trap'
     ];
 
     const devNames = {
-      phun_suong_1:   'Phun sương 1 (HDX0.0 / HDX1.0)',
-      phun_suong_2:   'Phun sương 2 (HDX0.1 / HDX1.1)',
-      phun_suong_3:   'Phun sương 3 (HDX0.2 / HDX1.2)',
-      phun_suong_4:   'Phun sương 4 (HDX0.3 / HDX1.3)',
-      den_1:          'Đèn 1 (HDX0.4 / HDX1.4)',
-      den_2:          'Đèn 2 (HDX0.5 / HDX1.5)',
-      suoi_1:         'Sưởi 1 (HDX0.6 / HDX1.6)',
-      loa_1:          'Loa 1 (HDX0.7 / HDX1.7)',
-      loa_2:          'Loa 2 (HDX0.8 / HDX1.8)',
-      loa_3:          'Loa 3 (HDX0.9 / HDX1.9)',
-      may_bom:        'Máy bơm (HDX0.10 / HDX1.10)',
-      bay_thien_dich: 'Bẫy thiên địch (HDX0.11 / HDX1.11)'
+      misting_1:   'Phun sương 1 (HDX0.0 / HDX1.0)',
+      misting_2:   'Phun sương 2 (HDX0.1 / HDX1.1)',
+      misting_3:   'Phun sương 3 (HDX0.2 / HDX1.2)',
+      misting_4:   'Phun sương 4 (HDX0.3 / HDX1.3)',
+      light_1:     'Đèn 1 (HDX0.4 / HDX1.4)',
+      light_2:     'Đèn 2 (HDX0.5 / HDX1.5)',
+      heater_1:    'Sưởi 1 (HDX0.6 / HDX1.6)',
+      speaker_1:   'Loa 1 (HDX0.7 / HDX1.7)',
+      speaker_2:   'Loa 2 (HDX0.8 / HDX1.8)',
+      speaker_3:   'Loa 3 (HDX0.9 / HDX1.9)',
+      pump:        'Máy bơm (HDX0.10 / HDX1.10)',
+      insect_trap: 'Bẫy côn trùng (HDX0.11 / HDX1.11)'
     };
 
-    const PS_DEVICES = ['phun_suong_1', 'phun_suong_2', 'phun_suong_3', 'phun_suong_4'];
+    const PS_DEVICES = ['misting_1', 'misting_2', 'misting_3', 'misting_4'];
     let currentAutoHumidity = false;
     let currentAutoTemp = false;
     let currentAutoPump = false;
@@ -1029,7 +1029,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     let deviceSchedules = {};
 
     function getMaxSlots(dev) {
-      return (dev && dev.startsWith('phun_suong')) ? 24 : 10;
+      return (dev && dev.startsWith('misting')) ? 24 : 10;
     }
 
     function initDefaultSchedules() {
@@ -1058,9 +1058,10 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         }
       });
 
-      if (!stored && deviceSchedules['phun_suong_1']) {
-        deviceSchedules['phun_suong_1'].slots[0] = { en: true, start: '07:10', stop: '07:20' };
-        deviceSchedules['phun_suong_1'].slots[1] = { en: true, start: '08:00', stop: '08:30' };
+      if (!stored && deviceSchedules['misting_1']) {
+        const targetDev = deviceSchedules['misting_1'];
+        targetDev.slots[0] = { en: true, start: '07:10', stop: '07:20' };
+        targetDev.slots[1] = { en: true, start: '08:00', stop: '08:30' };
       }
     }
 
@@ -1185,9 +1186,9 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
       if (isMistingDevice(dev) && currentAutoHumidity) {
         txt.innerHTML += `<br><span style="color:#0284c7; font-weight:600; font-size:0.8rem; display:inline-block; margin-top:4px;">ℹ️ Chú ý: Thiết bị này đang chạy Tự Động theo cảm biến độ ẩm. Các khung giờ cài đặt sẽ có hiệu lực sau khi bạn tắt chế độ Tự Động.</span>`;
-      } else if (dev === 'suoi_1' && currentAutoTemp) {
+      } else if (dev === 'heater_1' && currentAutoTemp) {
         txt.innerHTML += `<br><span style="color:#ea580c; font-weight:600; font-size:0.8rem; display:inline-block; margin-top:4px;">ℹ️ Chú ý: Thiết bị này đang chạy Tự Động theo cảm biến nhiệt độ. Các khung giờ cài đặt sẽ có hiệu lực sau khi bạn tắt chế độ Tự Động.</span>`;
-      } else if (dev === 'may_bom' && currentAutoPump) {
+      } else if (dev === 'pump' && currentAutoPump) {
         txt.innerHTML += `<br><span style="color:#0284c7; font-weight:600; font-size:0.8rem; display:inline-block; margin-top:4px;">ℹ️ Chú ý: Thiết bị này đang chạy Tự Động theo cảm biến mực nước. Các khung giờ cài đặt sẽ có hiệu lực sau khi bạn tắt chế độ Tự Động.</span>`;
       }
     }
@@ -1367,11 +1368,11 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         event.preventDefault();
         event.stopPropagation();
         alert('Chế độ Tự Động Phun Sương đang BẬT!\n\nCác bơm phun sương đang tự động vận hành theo cảm biến độ ẩm, không thể bật/tắt thủ công (chỉ để xem trạng thái).\n\nNếu muốn điều khiển bằng tay, vui lòng gạt TẮT công tắc "Phun Sương (4 Bơm)" ở mục Điều Khiển Tự Động phía trên.');
-      } else if (devKey === 'suoi_1' && currentAutoTemp) {
+      } else if (devKey === 'heater_1' && currentAutoTemp) {
         event.preventDefault();
         event.stopPropagation();
         alert('Chế độ Tự Động Sưởi đang BẬT!\n\nSưởi 1 đang tự động vận hành theo cảm biến nhiệt độ, không thể bật/tắt thủ công (chỉ để xem trạng thái).\n\nNếu muốn điều khiển bằng tay, vui lòng gạt TẮT công tắc "Sưởi 1" ở mục Điều Khiển Tự Động phía trên.');
-      } else if (devKey === 'may_bom' && currentAutoPump) {
+      } else if (devKey === 'pump' && currentAutoPump) {
         event.preventDefault();
         event.stopPropagation();
         alert('Chế độ Tự Động Bơm Nước đang BẬT!\n\nMáy bơm đang tự động vận hành theo cảm biến mực nước bể chứa (khi thiếu nước tự bật, đủ nước tự dừng), không thể bật/tắt thủ công (chỉ để xem trạng thái).\n\nNếu muốn điều khiển bằng tay, vui lòng gạt TẮT công tắc "Máy Bơm Nước" ở mục Điều Khiển Tự Động phía trên.');
@@ -1410,7 +1411,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
     function updateHeatingControlLock(isAuto) {
       currentAutoTemp = !!isAuto;
-      const k = 'suoi_1';
+      const k = 'heater_1';
       const sw = document.getElementById('sw-' + k);
       const lbl = document.getElementById('lbl-sw-' + k);
       const lock = document.getElementById('lock-' + k);
@@ -1439,7 +1440,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
     function updatePumpControlLock(isAuto) {
       currentAutoPump = !!isAuto;
-      const k = 'may_bom';
+      const k = 'pump';
       const sw = document.getElementById('sw-' + k);
       const lbl = document.getElementById('lbl-sw-' + k);
       const lock = document.getElementById('lock-' + k);
@@ -1472,12 +1473,12 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         refreshData();
         return;
       }
-      if (deviceKey === 'suoi_1' && currentAutoTemp) {
+      if (deviceKey === 'heater_1' && currentAutoTemp) {
         alert('Chế độ Tự Động Sưởi đang BẬT! Không thể bật/tắt thủ công Sưởi 1.');
         refreshData();
         return;
       }
-      if (deviceKey === 'may_bom' && currentAutoPump) {
+      if (deviceKey === 'pump' && currentAutoPump) {
         alert('Chế độ Tự Động Bơm Nước đang BẬT! Không thể bật/tắt thủ công Máy bơm.');
         refreshData();
         return;
@@ -1506,8 +1507,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         payload['auto_temp'] = isChecked ? 1 : 0;
         updateHeatingControlLock(isChecked);
         if (!isChecked) {
-          const swEl = document.getElementById('sw-suoi_1');
-          const pillEl = document.getElementById('pill-suoi_1');
+          const swEl = document.getElementById('sw-heater_1');
+          const pillEl = document.getElementById('pill-heater_1');
           if (swEl) swEl.checked = false;
           if (pillEl) {
             pillEl.innerText = 'TẮT';
@@ -1518,8 +1519,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         payload['auto_pump'] = isChecked ? 1 : 0;
         updatePumpControlLock(isChecked);
         if (!isChecked) {
-          const swEl = document.getElementById('sw-may_bom');
-          const pillEl = document.getElementById('pill-may_bom');
+          const swEl = document.getElementById('sw-pump');
+          const pillEl = document.getElementById('pill-pump');
           if (swEl) swEl.checked = false;
           if (pillEl) {
             pillEl.innerText = 'TẮT';
@@ -1668,7 +1669,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           swPump.checked = !!data.autoPumpMode;
           updatePumpControlLock(!!data.autoPumpMode);
           if (data.autoPumpMode) {
-            const isPumping = (data.devices && data.devices.may_bom == 1);
+            const isPumping = (data.devices && data.devices.pump == 1);
             if (data.waterOverflow == 1 || data.waterSafe == 0) {
               bPump.className = 'badge badge-err';
               bPump.innerText = 'TỰ ĐỘNG: ĐẦY/TRÀN NƯỚC (ĐÃ NGẮT BƠM)';
@@ -1723,7 +1724,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           }
         }
 
-        // 3. Cập nhật trạng thái phản hồi thực tế (Feedback) & Switch của 10 thiết bị
+        // 3. Cập nhật trạng thái phản hồi thực tế (Feedback) & Switch của 12 thiết bị
         if (data.devices) {
           devKeys.forEach(k => {
             const isRunning = (data.devices[k] == 1);
@@ -1772,9 +1773,10 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
         // 3.3 Cập nhật Cảm biến Dòng điện (A)
         if (data.current) {
-          const curKeys = ['den_1', 'den_2', 'phun_suong_1', 'phun_suong_2', 'phun_suong_3', 'loa_1', 'loa_2', 'may_bom'];
+          const curKeys = ['light_1', 'light_2', 'misting_1', 'misting_2', 'misting_3', 'speaker_1', 'speaker_2', 'pump'];
           curKeys.forEach(ck => {
-            const curVal = Number(data.current[ck] || 0).toFixed(2);
+            const val = data.current[ck];
+            const curVal = Number(val || 0).toFixed(2);
             const el = document.getElementById('cur-' + ck);
             if (el) el.innerText = curVal;
             const tagEl = document.getElementById('tag-cur-' + ck);
@@ -1916,36 +1918,22 @@ String extractJsonString(const String& json, const String& key) {
 
 // Hàm cập nhật trạng thái phản hồi thực tế của 12 thiết bị từ chuỗi JSON
 void updateDeviceStatesFromMsg(const String& msg) {
-  const char* devKeys[] = {
-    "phun_suong_1", "phun_suong_2", "phun_suong_3", "phun_suong_4",
-    "den_1", "den_2", "suoi_1", "loa_1", "loa_2", "loa_3",
-    "may_bom", "bay_thien_dich"
+  const char* devKeysEng[] = {
+    "misting_1", "misting_2", "misting_3", "misting_4",
+    "light_1", "light_2", "heater_1", "speaker_1", "speaker_2", "speaker_3",
+    "pump", "insect_trap"
   };
   bool* devPtrs[] = {
-    &statePhunSuong1, &statePhunSuong2, &statePhunSuong3, &statePhunSuong4,
-    &stateDen1, &stateDen2, &stateSuoi1, &stateLoa1, &stateLoa2, &stateLoa3,
-    &stateMayBom, &stateBayThienDich
+    &stateMisting1, &stateMisting2, &stateMisting3, &stateMisting4,
+    &stateLight1, &stateLight2, &stateHeater1, &stateSpeaker1, &stateSpeaker2, &stateSpeaker3,
+    &statePump, &stateInsectTrap
   };
 
   for (int i = 0; i < 12; i++) {
-    float val = extractJsonNumber(msg, devKeys[i]);
+    float val = extractJsonNumber(msg, devKeysEng[i]);
     if (val != -999.0) {
       *(devPtrs[i]) = (val > 0.5);
     }
-  }
-
-  // Tương thích ngược với các key cũ nếu có (chỉ xét khi không có key chuẩn)
-  if (extractJsonNumber(msg, "phun_suong_2") == -999.0) {
-    float fVal = extractJsonNumber(msg, "fan");
-    if (fVal != -999.0) statePhunSuong2 = (fVal > 0.5);
-  }
-  if (extractJsonNumber(msg, "phun_suong_3") == -999.0) {
-    float pVal = extractJsonNumber(msg, "pump");
-    if (pVal != -999.0) statePhunSuong3 = (pVal > 0.5);
-  }
-  if (extractJsonNumber(msg, "den_1") == -999.0) {
-    float lVal = extractJsonNumber(msg, "light");
-    if (lVal != -999.0) stateDen1 = (lVal > 0.5);
   }
 
   // Cập nhật chế độ tự động & ngưỡng cài đặt cảm biến nếu có trong payload
@@ -2090,23 +2078,30 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     float s3 = extractJsonNumber(message, "sound_3");
     if (s3 != -999.0) sound3 = s3;
 
-    // Trích xuất cảm biến dòng điện (A) theo mapping.txt
-    float cDen1 = extractJsonNumber(message, "cur_den_1");
-    if (cDen1 != -999.0) curDen1 = cDen1;
-    float cDen2 = extractJsonNumber(message, "cur_den_2");
-    if (cDen2 != -999.0) curDen2 = cDen2;
-    float cPs1 = extractJsonNumber(message, "cur_ps_1");
-    if (cPs1 != -999.0) curPs1 = cPs1;
-    float cPs2 = extractJsonNumber(message, "cur_ps_2");
-    if (cPs2 != -999.0) curPs2 = cPs2;
-    float cPs3 = extractJsonNumber(message, "cur_ps_3");
-    if (cPs3 != -999.0) curPs3 = cPs3;
-    float cLoa1 = extractJsonNumber(message, "cur_loa_1");
-    if (cLoa1 != -999.0) curLoa1 = cLoa1;
-    float cLoa2 = extractJsonNumber(message, "cur_loa_2");
-    if (cLoa2 != -999.0) curLoa2 = cLoa2;
-    float cMb = extractJsonNumber(message, "cur_may_bom");
-    if (cMb != -999.0) curMayBom = cMb;
+    // Trích xuất 8 cảm biến dòng điện (A) theo mapping.txt
+    float cLight1 = extractJsonNumber(message, "cur_light_1");
+    if (cLight1 != -999.0) curLight1 = cLight1;
+
+    float cLight2 = extractJsonNumber(message, "cur_light_2");
+    if (cLight2 != -999.0) curLight2 = cLight2;
+
+    float cPs1 = extractJsonNumber(message, "cur_misting_1");
+    if (cPs1 != -999.0) curMisting1 = cPs1;
+
+    float cPs2 = extractJsonNumber(message, "cur_misting_2");
+    if (cPs2 != -999.0) curMisting2 = cPs2;
+
+    float cPs3 = extractJsonNumber(message, "cur_misting_3");
+    if (cPs3 != -999.0) curMisting3 = cPs3;
+
+    float cLoa1 = extractJsonNumber(message, "cur_speaker_1");
+    if (cLoa1 != -999.0) curSpeaker1 = cLoa1;
+
+    float cLoa2 = extractJsonNumber(message, "cur_speaker_2");
+    if (cLoa2 != -999.0) curSpeaker2 = cLoa2;
+
+    float cPump = extractJsonNumber(message, "cur_pump");
+    if (cPump != -999.0) curPump = cPump;
 
     Serial.printf("[V-BOX DATA] -> Temp: %.1f °C, Hum: %.1f %%, VBox_HB: %d/60, PLC_HB: %d/60, Water: [Thiếu:%d, Tràn:%d], Sound1: %.1fdB\n", 
       currentTemperature, currentHumidity, vboxHeartbeat, plcHeartbeat, waterEmpty, waterOverflow, sound1);
@@ -2195,28 +2190,28 @@ void handleGetData() {
   json += "\"s3\":" + String(sound3, 1);
   json += "},";
   json += "\"current\":{";
-  json += "\"den_1\":" + String(curDen1, 2) + ",";
-  json += "\"den_2\":" + String(curDen2, 2) + ",";
-  json += "\"phun_suong_1\":" + String(curPs1, 2) + ",";
-  json += "\"phun_suong_2\":" + String(curPs2, 2) + ",";
-  json += "\"phun_suong_3\":" + String(curPs3, 2) + ",";
-  json += "\"loa_1\":" + String(curLoa1, 2) + ",";
-  json += "\"loa_2\":" + String(curLoa2, 2) + ",";
-  json += "\"may_bom\":" + String(curMayBom, 2);
+  json += "\"light_1\":" + String(curLight1, 2) + ",";
+  json += "\"light_2\":" + String(curLight2, 2) + ",";
+  json += "\"misting_1\":" + String(curMisting1, 2) + ",";
+  json += "\"misting_2\":" + String(curMisting2, 2) + ",";
+  json += "\"misting_3\":" + String(curMisting3, 2) + ",";
+  json += "\"speaker_1\":" + String(curSpeaker1, 2) + ",";
+  json += "\"speaker_2\":" + String(curSpeaker2, 2) + ",";
+  json += "\"pump\":" + String(curPump, 2);
   json += "},";
   json += "\"devices\":{";
-  json += "\"phun_suong_1\":" + String(statePhunSuong1 ? 1 : 0) + ",";
-  json += "\"phun_suong_2\":" + String(statePhunSuong2 ? 1 : 0) + ",";
-  json += "\"phun_suong_3\":" + String(statePhunSuong3 ? 1 : 0) + ",";
-  json += "\"phun_suong_4\":" + String(statePhunSuong4 ? 1 : 0) + ",";
-  json += "\"den_1\":" + String(stateDen1 ? 1 : 0) + ",";
-  json += "\"den_2\":" + String(stateDen2 ? 1 : 0) + ",";
-  json += "\"suoi_1\":" + String(stateSuoi1 ? 1 : 0) + ",";
-  json += "\"loa_1\":" + String(stateLoa1 ? 1 : 0) + ",";
-  json += "\"loa_2\":" + String(stateLoa2 ? 1 : 0) + ",";
-  json += "\"loa_3\":" + String(stateLoa3 ? 1 : 0) + ",";
-  json += "\"may_bom\":" + String(stateMayBom ? 1 : 0) + ",";
-  json += "\"bay_thien_dich\":" + String(stateBayThienDich ? 1 : 0);
+  json += "\"misting_1\":" + String(stateMisting1 ? 1 : 0) + ",";
+  json += "\"misting_2\":" + String(stateMisting2 ? 1 : 0) + ",";
+  json += "\"misting_3\":" + String(stateMisting3 ? 1 : 0) + ",";
+  json += "\"misting_4\":" + String(stateMisting4 ? 1 : 0) + ",";
+  json += "\"light_1\":" + String(stateLight1 ? 1 : 0) + ",";
+  json += "\"light_2\":" + String(stateLight2 ? 1 : 0) + ",";
+  json += "\"heater_1\":" + String(stateHeater1 ? 1 : 0) + ",";
+  json += "\"speaker_1\":" + String(stateSpeaker1 ? 1 : 0) + ",";
+  json += "\"speaker_2\":" + String(stateSpeaker2 ? 1 : 0) + ",";
+  json += "\"speaker_3\":" + String(stateSpeaker3 ? 1 : 0) + ",";
+  json += "\"pump\":" + String(statePump ? 1 : 0) + ",";
+  json += "\"insect_trap\":" + String(stateInsectTrap ? 1 : 0);
   json += "},";
   json += "\"lastReceived\":\"" + escapeJsonString(lastMqttReceived) + "\",";
   json += "\"lastPublished\":\"" + escapeJsonString(lastMqttPublished) + "\",";
@@ -2242,30 +2237,32 @@ void handleMqttPublish() {
     if (ah != -999.0) {
       autoHumidityMode = (ah > 0.5);
       if (!autoHumidityMode) {
-        statePhunSuong1 = false;
-        statePhunSuong2 = false;
-        statePhunSuong3 = false;
-        statePhunSuong4 = false;
+        stateMisting1 = false;
+        stateMisting2 = false;
+        stateMisting3 = false;
+        stateMisting4 = false;
       }
     }
     float at = extractJsonNumber(payload, "auto_temp");
     if (at != -999.0) {
       autoTempMode = (at > 0.5);
       if (!autoTempMode) {
-        stateSuoi1 = false;
+        stateHeater1 = false;
       }
     }
     float ap = extractJsonNumber(payload, "auto_pump");
     if (ap != -999.0) {
       autoPumpMode = (ap > 0.5);
       if (!autoPumpMode) {
-        stateMayBom = false;
+        statePump = false;
       }
     }
 
     // Nếu đang ở chế độ tự động độ ẩm, từ chối lệnh bật/tắt thủ công cho 4 bơm phun sương (chỉ cho phép xem trạng thái)
     if (autoHumidityMode && payload.indexOf("\"cmd\"") == -1 && payload.indexOf("schedules") == -1) {
-      const char* psKeys[] = {"\"phun_suong_1\"", "\"phun_suong_2\"", "\"phun_suong_3\"", "\"phun_suong_4\""};
+      const char* psKeys[] = {
+        "\"misting_1\"", "\"misting_2\"", "\"misting_3\"", "\"misting_4\""
+      };
       for (int i = 0; i < 4; i++) {
         if (payload.indexOf(psKeys[i]) != -1) {
           Serial.printf("[CẢNH BÁO] Chế độ Tự động độ ẩm đang BẬT -> Khóa lệnh thủ công cho %s!\n", psKeys[i]);
@@ -2277,7 +2274,7 @@ void handleMqttPublish() {
 
     // Nếu đang ở chế độ tự động nhiệt độ, từ chối lệnh bật/tắt thủ công cho Sưởi 1
     if (autoTempMode && payload.indexOf("\"cmd\"") == -1 && payload.indexOf("schedules") == -1) {
-      if (payload.indexOf("\"suoi_1\"") != -1) {
+      if (payload.indexOf("\"heater_1\"") != -1) {
         Serial.println(F("[CẢNH BÁO] Chế độ Tự động nhiệt độ đang BẬT -> Khóa lệnh thủ công cho Sưởi 1!"));
         server.send(403, "text/plain; charset=utf-8", "Chế độ Tự động đang BẬT! Không thể điều khiển thủ công Sưởi 1.");
         return;
@@ -2286,7 +2283,7 @@ void handleMqttPublish() {
 
     // Nếu đang ở chế độ tự động bơm nước, từ chối lệnh bật/tắt thủ công cho Máy bơm
     if (autoPumpMode && payload.indexOf("\"cmd\"") == -1 && payload.indexOf("schedules") == -1) {
-      if (payload.indexOf("\"may_bom\"") != -1) {
+      if (payload.indexOf("\"pump\"") != -1) {
         Serial.println(F("[CẢNH BÁO] Chế độ Tự động bơm nước đang BẬT -> Khóa lệnh thủ công cho Máy bơm!"));
         server.send(403, "text/plain; charset=utf-8", "Chế độ Tự động đang BẬT! Không thể điều khiển thủ công Máy bơm.");
         return;

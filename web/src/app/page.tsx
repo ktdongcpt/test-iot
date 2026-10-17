@@ -38,10 +38,10 @@ export default function DashboardPage() {
   }, []);
 
   const anyMistActive = Boolean(
-    telemetry.devices.phun_suong_1 ||
-    telemetry.devices.phun_suong_2 ||
-    telemetry.devices.phun_suong_3 ||
-    telemetry.devices.phun_suong_4
+    telemetry.devices.misting_1 ||
+    telemetry.devices.misting_2 ||
+    telemetry.devices.misting_3 ||
+    telemetry.devices.misting_4
   );
 
   return (
@@ -110,9 +110,9 @@ export default function DashboardPage() {
         psCycleState={telemetry.psCycleState}
         psOnSec={telemetry.psOnSec}
         psOffSec={telemetry.psOffSec}
-        stateSuoi1={Boolean(telemetry.devices.suoi_1)}
+        stateSuoi1={Boolean(telemetry.devices.heater_1)}
         statePhunSuongAny={anyMistActive}
-        stateMayBom={Boolean(telemetry.devices.may_bom)}
+        stateMayBom={Boolean(telemetry.devices.pump)}
         sound={telemetry.sound}
         current={telemetry.current}
       />
@@ -129,7 +129,7 @@ export default function DashboardPage() {
         waterEmpty={telemetry.waterEmpty}
         waterSafe={telemetry.waterSafe}
         waterOverflow={telemetry.waterOverflow}
-        stateMayBom={Boolean(telemetry.devices.may_bom)}
+        stateMayBom={Boolean(telemetry.devices.pump)}
       />
 
       {/* 5. Bảng điều khiển và phản hồi 12 thiết bị */}
